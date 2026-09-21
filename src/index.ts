@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
 const COM_FAST_PATH_SECRET = String(process.env.COM_FAST_PATH_SECRET || '').trim();
 const MCP_ALLOWED_HOST = String(process.env.MCP_ALLOWED_HOST || '').trim();
+const RENDER_EXTERNAL_HOSTNAME = String(process.env.RENDER_EXTERNAL_HOSTNAME || '').trim();
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
 const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').trim();
 const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
@@ -245,9 +246,11 @@ function buildServer(): McpServer {
 const handler = createMcpHandler(buildServer);
 const appOptions: Parameters<typeof createMcpExpressApp>[0] = {};
 
-if (MCP_ALLOWED_HOST) {
+const EFFECTIVE_ALLOWED_HOST = MCP_ALLOWED_HOST || RENDER_EXTERNAL_HOSTNAME;
+
+if (EFFECTIVE_ALLOWED_HOST) {
   appOptions.host = '0.0.0.0';
-  appOptions.allowedHosts = [MCP_ALLOWED_HOST];
+  appOptions.allowedHosts = [EFFECTIVE_ALLOWED_HOST];
 }
 
 if (MCP_ALLOWED_ORIGIN) {
@@ -286,7 +289,7 @@ app.all('/mcp', (req, res) => {
   void nodeHandler(req, res, req.body);
 });
 
-const LISTEN_HOST = IS_RENDER || MCP_ALLOWED_HOST ? '0.0.0.0' : '127.0.0.1';
+const LISTEN_HOST = IS_RENDER || EFFECTIVE_ALLOWED_HOST ? '0.0.0.0' : '127.0.0.1';
 
 app.listen(PORT, LISTEN_HOST, () => {
   console.log(
