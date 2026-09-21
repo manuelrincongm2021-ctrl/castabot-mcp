@@ -14,6 +14,7 @@ const COM_FAST_PATH_SECRET = String(process.env.COM_FAST_PATH_SECRET || '').trim
 const MCP_ALLOWED_HOST = String(process.env.MCP_ALLOWED_HOST || '').trim();
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
 const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').trim();
+const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
 
 function requireConfig(): void {
   const missing: string[] = [];
@@ -285,8 +286,10 @@ app.all('/mcp', (req, res) => {
   void nodeHandler(req, res, req.body);
 });
 
-app.listen(PORT, MCP_ALLOWED_HOST ? '0.0.0.0' : '127.0.0.1', () => {
+const LISTEN_HOST = IS_RENDER || MCP_ALLOWED_HOST ? '0.0.0.0' : '127.0.0.1';
+
+app.listen(PORT, LISTEN_HOST, () => {
   console.log(
-    `[${SERVER_NAME}] MCP escuchando en http://${MCP_ALLOWED_HOST ? '0.0.0.0' : '127.0.0.1'}:${PORT}/mcp`
+    `[${SERVER_NAME}] MCP escuchando en http://${LISTEN_HOST}:${PORT}/mcp`
   );
 });
