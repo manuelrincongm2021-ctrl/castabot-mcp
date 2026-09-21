@@ -6,7 +6,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.1.0';
+const SERVER_VERSION = '1.2.0';
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -204,6 +204,68 @@ async function postEncolarCom(input: EncolarComInput): Promise<EncolarComOutput>
   }
 }
 
+
+async function postProcesarCom(): Promise<Record<string, unknown>> {
+  requireConfig();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const response = await fetch(COM_FAST_PATH_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify({
+        secret: COM_FAST_PATH_SECRET,
+        accion: 'PROCESAR'
+      }),
+      redirect: 'follow',
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `Web App COM respondió HTTP ${response.status}: ${text.slice(0, 1000)}`
+      );
+    }
+
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(
+        `Web App COM no devolvió JSON válido: ${text.slice(0, 1000)}`
+      );
+    }
+
+    if (!json || typeof json !== 'object' || Array.isArray(json)) {
+      throw new Error('Web App COM devolvió una estructura inválida para PROCESAR.');
+    }
+
+    const result = json as Record<string, unknown>;
+
+    if (result.ok !== true) {
+      throw new Error(
+        String(result.error || 'Web App COM devolvió ok=false al procesar.')
+      );
+    }
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Timeout al invocar PROCESAR después de 25 segundos.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function buildServer(): McpServer {
   const server = new McpServer(
     {
@@ -305,6 +367,37 @@ app.get('/healthz', (_req, res) => {
   }
 });
 
+
+
+app.post('/procesar-com', async (req, res) => {
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({
+      ok: false,
+      error: 'NO_AUTORIZADO'
+    });
+    return;
+  }
+
+  try {
+    const result = await postProcesarCom();
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
 
 app.post('/encolar-com', async (req, res) => {
   try {
