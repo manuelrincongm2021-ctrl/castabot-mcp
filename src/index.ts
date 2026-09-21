@@ -6,11 +6,12 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.0.0';
+const SERVER_VERSION = '1.1.0';
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
 const COM_FAST_PATH_SECRET = String(process.env.COM_FAST_PATH_SECRET || '').trim();
+const CASTABOT_API_KEY = String(process.env.CASTABOT_API_KEY || '').trim();
 const MCP_ALLOWED_HOST = String(process.env.MCP_ALLOWED_HOST || '').trim();
 const RENDER_EXTERNAL_HOSTNAME = String(process.env.RENDER_EXTERNAL_HOSTNAME || '').trim();
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
@@ -39,6 +40,33 @@ function requireConfig(): void {
   if (parsed.protocol !== 'https:') {
     throw new Error('COM_FAST_PATH_URL debe usar HTTPS.');
   }
+}
+
+
+function requireHttpApiConfig(): void {
+  requireConfig();
+
+  if (!CASTABOT_API_KEY) {
+    throw new Error('Falta configuración obligatoria: CASTABOT_API_KEY');
+  }
+}
+
+function extractApiKey(req: { headers: Record<string, unknown> }): string {
+  const authorization = String(req.headers.authorization || '').trim();
+
+  if (authorization.toLowerCase().startsWith('bearer ')) {
+    return authorization.slice(7).trim();
+  }
+
+  return String(req.headers['x-castabot-api-key'] || '').trim();
+}
+
+function isAuthorizedApiRequest(req: { headers: Record<string, unknown> }): boolean {
+  if (!CASTABOT_API_KEY) {
+    return false;
+  }
+
+  return extractApiKey(req) === CASTABOT_API_KEY;
 }
 
 const EncolarComInputSchema = z
@@ -266,10 +294,56 @@ app.get('/healthz', (_req, res) => {
     res.status(200).json({
       ok: true,
       server: SERVER_NAME,
-      version: SERVER_VERSION
+      version: SERVER_VERSION,
+      http_api_configured: Boolean(CASTABOT_API_KEY)
     });
   } catch (error) {
     res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+
+app.post('/encolar-com', async (req, res) => {
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({
+      ok: false,
+      error: 'NO_AUTORIZADO'
+    });
+    return;
+  }
+
+  const parsed = EncolarComInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'EVENTO_INVALIDO',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  try {
+    const result = await postEncolarCom(parsed.data);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     });
