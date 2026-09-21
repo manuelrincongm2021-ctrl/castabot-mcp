@@ -39,9 +39,10 @@ Edita `.env` y completa:
 ```env
 COM_FAST_PATH_URL=https://script.google.com/macros/s/XXXXXXXXXXXX/exec
 COM_FAST_PATH_SECRET=tu_secreto_actual
+CASTABOT_API_KEY=una_clave_larga_distinta
 ```
 
-No compartas `.env` ni subas el secreto al repositorio.
+No compartas `.env` ni subas secretos al repositorio. `CASTABOT_API_KEY` debe ser distinta de `COM_FAST_PATH_SECRET`.
 
 ## Validar TypeScript
 
@@ -154,6 +155,80 @@ y expón mediante HTTPS:
 ```text
 https://mcp.tudominio.mx/mcp
 ```
+
+
+## API HTTPS para CASTABOT Plus
+
+Además de MCP, el mismo servidor expone una API HTTPS controlada:
+
+```text
+POST /encolar-com
+```
+
+En Render:
+
+```text
+https://castabot-mcp.onrender.com/encolar-com
+```
+
+Autenticación recomendada:
+
+```http
+Authorization: Bearer <CASTABOT_API_KEY>
+Content-Type: application/json
+```
+
+También se acepta el encabezado `x-castabot-api-key`.
+
+Ejemplo de cuerpo TEXT:
+
+```json
+{
+  "event_id": "TEST-HTTP-20260921-01",
+  "origin": "PRUEBA HTTP CASTABOT",
+  "confirmed_by_consultant": "SI",
+  "type": "TEXT",
+  "caption": "Prueba HTTPS CASTABOT",
+  "destination_alias": "ADMINISTRACION"
+}
+```
+
+La API no acepta URL ni secreto del Web App en el cuerpo. El servidor agrega internamente `COM_FAST_PATH_URL`, `COM_FAST_PATH_SECRET` y `accion=ENCOLAR`.
+
+Respuestas principales:
+
+- `200`: el Web App COM respondió satisfactoriamente, incluyendo eventos nuevos o duplicados idempotentes.
+- `400`: esquema del evento inválido.
+- `401`: clave API ausente o incorrecta.
+- `502`: el Web App COM falló o devolvió una respuesta no acreditada.
+- `503`: configuración del servidor incompleta.
+
+Prueba de autorización sin enviar un evento válido:
+
+```bash
+curl -i -X POST https://castabot-mcp.onrender.com/encolar-com \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Debe responder `401` cuando no se suministra la clave.
+
+Prueba real controlada:
+
+```bash
+curl -X POST https://castabot-mcp.onrender.com/encolar-com \
+  -H "Authorization: Bearer $CASTABOT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event_id":"TEST-HTTP-20260921-01",
+    "origin":"PRUEBA HTTP CASTABOT",
+    "confirmed_by_consultant":"SI",
+    "type":"TEXT",
+    "caption":"Prueba HTTPS CASTABOT",
+    "destination_alias":"ADMINISTRACION"
+  }'
+```
+
 
 ## Verificación de dominio OpenAI
 
