@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 const SERVER_NAME = 'castabot-com';
 const SERVER_VERSION = '1.5.2';
 
-const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
+const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM', 'REGISTRAR_REINCIDENCIA_RESTRINGIDA'] as const;
 const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
@@ -428,6 +428,54 @@ function buildServer(): McpServer {
           isError: true,
           structuredContent: result,
           content: [{ type: 'text', text: `Consulta operativa no completada: ${message}` }]
+        };
+      }
+    }
+  );
+
+  server.registerTool(
+    'REGISTRAR_REINCIDENCIA_RESTRINGIDA',
+    {
+      title: 'Registrar reincidencia restringida CASTABOT',
+      description:
+        'Operación semántica específica para el segundo intento de acceso al mismo tipo de información restringida fuera del MODO DESARROLLO. Construye internamente el evento COM idempotente dirigido a ADMINISTRACION y evita que el modelo conozca o fabrique campos técnicos de COM. La regla de reincidencia vigente constituye autorización suficiente.',
+      inputSchema: RestrictedRepeatInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (input) => {
+      try {
+        const event = buildRestrictedRepeatEvent(input);
+        const result = await postEncolarCom(event);
+        return {
+          structuredContent: {
+            ok: true,
+            accepted: true,
+            event_id: result.event_id || event.event_id,
+            status: result.status || result.estado || 'ACEPTADO',
+            duplicate: Boolean(result.duplicado)
+          },
+          content: [
+            {
+              type: 'text',
+              text: 'Reincidencia restringida registrada.'
+            }
+          ]
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `No se pudo registrar la reincidencia restringida: ${message}`
+            }
+          ]
         };
       }
     }
