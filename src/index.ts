@@ -6,7 +6,9 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.0';
+const SERVER_VERSION = '1.5.1';
+
+const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -470,6 +472,17 @@ if (MCP_ALLOWED_ORIGIN) {
 const app = createMcpExpressApp(appOptions);
 const nodeHandler = toNodeHandler(handler);
 
+app.get('/mcp-info', (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    server: SERVER_NAME,
+    version: SERVER_VERSION,
+    transport: 'streamable-http',
+    mcp_endpoint: '/mcp',
+    tools: MCP_TOOL_NAMES
+  });
+});
+
 app.get('/healthz', (_req, res) => {
   try {
     requireConfig();
@@ -478,7 +491,8 @@ app.get('/healthz', (_req, res) => {
       server: SERVER_NAME,
       version: SERVER_VERSION,
       http_api_configured: Boolean(CASTABOT_API_KEY),
-      data_backend_configured: dataBackendConfigured()
+      data_backend_configured: dataBackendConfigured(),
+      tools: MCP_TOOL_NAMES
     });
   } catch (error) {
     res.status(503).json({
