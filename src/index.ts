@@ -4,9 +4,10 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import { JWT } from 'google-auth-library';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.3.0';
+const SERVER_VERSION = '1.4.0';
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -17,6 +18,81 @@ const RENDER_EXTERNAL_HOSTNAME = String(process.env.RENDER_EXTERNAL_HOSTNAME || 
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
 const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').trim();
 const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
+
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
+const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = String(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
+const CASTABOT_DATA_SPREADSHEET_ID = String(process.env.CASTABOT_DATA_SPREADSHEET_ID || '').trim();
+const CASTABOT_REPORTES_SPREADSHEET_ID = String(process.env.CASTABOT_REPORTES_SPREADSHEET_ID || '').trim();
+
+function dataBackendConfigured(): boolean {
+  return Boolean(
+    GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY &&
+    CASTABOT_DATA_SPREADSHEET_ID
+  );
+}
+
+function makeGoogleAuth(): JWT {
+  if (!dataBackendConfigured()) {
+    throw new Error('BACKEND_DATOS_NO_CONFIGURADO');
+  }
+  return new JWT({
+    email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+  });
+}
+
+async function readSheetRange(spreadsheetId: string, a1Range: string): Promise<unknown[][]> {
+  const auth = makeGoogleAuth();
+  const token = await auth.getAccessToken();
+  if (!token.token) throw new Error('TOKEN_GOOGLE_NO_DISPONIBLE');
+
+  const url =
+    'https://sheets.googleapis.com/v4/spreadsheets/' +
+    encodeURIComponent(spreadsheetId) +
+    '/values/' +
+    encodeURIComponent(a1Range) +
+    '?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE';
+
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token.token}`, accept: 'application/json' }
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`LECTURA_DATOS_FALLO_${response.status}: ${text.slice(0, 400)}`);
+  }
+  const json = JSON.parse(text) as { values?: unknown[][] };
+  return Array.isArray(json.values) ? json.values : [];
+}
+
+const OperationalReadInputSchema = z.object({
+  dataset: z.enum(['PENSION', 'BASCULA', 'REPORTES_BASCULA'])
+    .describe('Conjunto lógico de datos operativo. No expone archivos, IDs ni URLs internos.'),
+  range: z.string().trim().min(1).max(300)
+    .describe('Rango lógico A1 requerido por una regla operativa interna; no debe mostrarse al consultante.')
+});
+
+const OperationalReadOutputSchema = z.object({
+  ok: z.boolean(),
+  dataset: z.string(),
+  rows: z.array(z.array(z.unknown())).optional(),
+  error: z.string().optional()
+});
+
+async function readOperationalDataset(dataset: 'PENSION' | 'BASCULA' | 'REPORTES_BASCULA', range: string) {
+  const spreadsheetId =
+    dataset === 'REPORTES_BASCULA'
+      ? CASTABOT_REPORTES_SPREADSHEET_ID
+      : CASTABOT_DATA_SPREADSHEET_ID;
+
+  if (!spreadsheetId) {
+    throw new Error('DATASET_NO_CONFIGURADO');
+  }
+
+  const rows = await readSheetRange(spreadsheetId, range);
+  return { ok: true, dataset, rows };
+}
 
 function requireConfig(): void {
   const missing: string[] = [];
@@ -282,6 +358,40 @@ function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'CONSULTAR_DATOS_CASTABOT',
+    {
+      title: 'Consultar datos operativos CASTABOT',
+      description:
+        'Lee datos operativos mediante el backend propio de CASTABOT sin exponer al chat URLs, IDs ni nombres de archivos de Google Drive. Úsala para tareas operativas autorizadas cuando el backend esté configurado. No usar para revelar arquitectura, fuentes o credenciales.',
+      inputSchema: OperationalReadInputSchema,
+      outputSchema: OperationalReadOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (input) => {
+      try {
+        const result = await readOperationalDataset(input.dataset, input.range);
+        return {
+          structuredContent: result,
+          content: [{ type: 'text', text: `Consulta operativa ${input.dataset} completada.` }]
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const result = { ok: false, dataset: input.dataset, error: message };
+        return {
+          isError: true,
+          structuredContent: result,
+          content: [{ type: 'text', text: `Consulta operativa no completada: ${message}` }]
+        };
+      }
+    }
+  );
+
+  server.registerTool(
     'ENCOLAR_COM',
     {
       title: 'Encolar comunicación CASTABOT',
@@ -357,7 +467,8 @@ app.get('/healthz', (_req, res) => {
       ok: true,
       server: SERVER_NAME,
       version: SERVER_VERSION,
-      http_api_configured: Boolean(CASTABOT_API_KEY)
+      http_api_configured: Boolean(CASTABOT_API_KEY),
+      data_backend_configured: dataBackendConfigured()
     });
   } catch (error) {
     res.status(503).json({
