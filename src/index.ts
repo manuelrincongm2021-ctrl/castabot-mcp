@@ -4,10 +4,9 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { JWT } from 'google-auth-library';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.4.0';
+const SERVER_VERSION = '1.5.0';
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -19,79 +18,76 @@ const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
 const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').trim();
 const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
 
-const GOOGLE_SERVICE_ACCOUNT_EMAIL = String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
-const GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = String(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
-const CASTABOT_DATA_SPREADSHEET_ID = String(process.env.CASTABOT_DATA_SPREADSHEET_ID || '').trim();
-const CASTABOT_REPORTES_SPREADSHEET_ID = String(process.env.CASTABOT_REPORTES_SPREADSHEET_ID || '').trim();
-
 function dataBackendConfigured(): boolean {
-  return Boolean(
-    GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY &&
-    CASTABOT_DATA_SPREADSHEET_ID
-  );
+  return Boolean(COM_FAST_PATH_URL && COM_FAST_PATH_SECRET);
 }
 
-function makeGoogleAuth(): JWT {
-  if (!dataBackendConfigured()) {
-    throw new Error('BACKEND_DATOS_NO_CONFIGURADO');
+async function readOperationalDataset(
+  dataset: 'PENSION' | 'BASCULA' | 'REPORTES_BASCULA',
+  range: string
+) {
+  requireConfig();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const response = await fetch(COM_FAST_PATH_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify({
+        secret: COM_FAST_PATH_SECRET,
+        accion: 'LEER_DATOS_CASTABOT',
+        dataset,
+        range
+      }),
+      redirect: 'follow',
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `BACKEND_DATOS_HTTP_${response.status}: ${text.slice(0, 800)}`
+      );
+    }
+
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(
+        `BACKEND_DATOS_JSON_INVALIDO: ${text.slice(0, 800)}`
+      );
+    }
+
+    const parsed = OperationalReadOutputSchema.safeParse(json);
+
+    if (!parsed.success) {
+      throw new Error(
+        `BACKEND_DATOS_ESTRUCTURA_INVALIDA: ${parsed.error.message}`
+      );
+    }
+
+    if (!parsed.data.ok) {
+      throw new Error(
+        parsed.data.error || 'BACKEND_DATOS_OK_FALSE'
+      );
+    }
+
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Timeout al consultar datos después de 25 segundos.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return new JWT({
-    email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
-  });
-}
-
-async function readSheetRange(spreadsheetId: string, a1Range: string): Promise<unknown[][]> {
-  const auth = makeGoogleAuth();
-  const token = await auth.getAccessToken();
-  if (!token.token) throw new Error('TOKEN_GOOGLE_NO_DISPONIBLE');
-
-  const url =
-    'https://sheets.googleapis.com/v4/spreadsheets/' +
-    encodeURIComponent(spreadsheetId) +
-    '/values/' +
-    encodeURIComponent(a1Range) +
-    '?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE';
-
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${token.token}`, accept: 'application/json' }
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`LECTURA_DATOS_FALLO_${response.status}: ${text.slice(0, 400)}`);
-  }
-  const json = JSON.parse(text) as { values?: unknown[][] };
-  return Array.isArray(json.values) ? json.values : [];
-}
-
-const OperationalReadInputSchema = z.object({
-  dataset: z.enum(['PENSION', 'BASCULA', 'REPORTES_BASCULA'])
-    .describe('Conjunto lógico de datos operativo. No expone archivos, IDs ni URLs internos.'),
-  range: z.string().trim().min(1).max(300)
-    .describe('Rango lógico A1 requerido por una regla operativa interna; no debe mostrarse al consultante.')
-});
-
-const OperationalReadOutputSchema = z.object({
-  ok: z.boolean(),
-  dataset: z.string(),
-  rows: z.array(z.array(z.unknown())).optional(),
-  error: z.string().optional()
-});
-
-async function readOperationalDataset(dataset: 'PENSION' | 'BASCULA' | 'REPORTES_BASCULA', range: string) {
-  const spreadsheetId =
-    dataset === 'REPORTES_BASCULA'
-      ? CASTABOT_REPORTES_SPREADSHEET_ID
-      : CASTABOT_DATA_SPREADSHEET_ID;
-
-  if (!spreadsheetId) {
-    throw new Error('DATASET_NO_CONFIGURADO');
-  }
-
-  const rows = await readSheetRange(spreadsheetId, range);
-  return { ok: true, dataset, rows };
 }
 
 function requireConfig(): void {
@@ -353,7 +349,7 @@ function buildServer(): McpServer {
         tools: {}
       },
       instructions:
-        'Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. En particular, ante la segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37, la propia regla constituye autorización suficiente: crea inmediatamente un evento TEXT con destino ADMINISTRACION, sin pedir confirmación, antes de finalizar la respuesta visible no disponible. No inventes EVENT_ID, no expongas secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
+        'Para tareas operativas autorizadas usa CONSULTAR_DATOS_CASTABOT como vía primaria de lectura, evitando llamadas directas a Google Drive cuando esta herramienta cubra el dato requerido. Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. Ante la segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37, crea el evento COM antes de finalizar la respuesta visible no disponible. No expongas URLs, IDs, nombres de archivos internos ni secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
     }
   );
 
@@ -545,6 +541,53 @@ app.post('/encolar-com', async (req, res) => {
 
   try {
     const result = await postEncolarCom(parsed.data);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/consultar-datos', async (req, res) => {
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({
+      ok: false,
+      error: 'NO_AUTORIZADO'
+    });
+    return;
+  }
+
+  const parsed = OperationalReadInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'CONSULTA_INVALIDA',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  try {
+    const result = await readOperationalDataset(
+      parsed.data.dataset,
+      parsed.data.range
+    );
     res.status(200).json(result);
   } catch (error) {
     res.status(502).json({
