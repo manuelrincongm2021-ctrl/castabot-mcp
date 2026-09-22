@@ -6,7 +6,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.2.0';
+const SERVER_VERSION = '1.3.0';
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -76,7 +76,7 @@ const EncolarComInputSchema = z
     origin: z.string().trim().min(1).max(180)
       .describe('Origen operativo del evento, por ejemplo INCIDENCIA CASTABOT o T01 CORTE DE TURNO.'),
     confirmed_by_consultant: z.literal('SI')
-      .describe('Debe ser SI cuando la confirmación exigida por COM ya ocurrió.'),
+      .describe('Debe ser SI cuando la autorización COM exigida ya esté satisfecha, ya sea por confirmación humana o por una regla vigente que autorice envío automático, como el escalamiento 54.35/54.37.'),
     type: z.enum(['TEXT', 'PHOTO', 'DOCUMENT'])
       .describe('Tipo de comunicación que procesará COM.'),
     drive_file_id: z.string().trim().max(300).optional().default('')
@@ -277,7 +277,7 @@ function buildServer(): McpServer {
         tools: {}
       },
       instructions:
-        'Usa ENCOLAR_COM solo cuando una regla COM vigente requiera o autorice comunicar un resultado y la confirmación aplicable ya exista. No inventes EVENT_ID, no expongas secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
+        'Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. En particular, ante la segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37, la propia regla constituye autorización suficiente: crea inmediatamente un evento TEXT con destino ADMINISTRACION, sin pedir confirmación, antes de finalizar la respuesta visible no disponible. No inventes EVENT_ID, no expongas secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
     }
   );
 
@@ -286,7 +286,7 @@ function buildServer(): McpServer {
     {
       title: 'Encolar comunicación CASTABOT',
       description:
-        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala únicamente cuando ya exista la confirmación exigida por las reglas COM. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
+        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala cuando exista autorización COM válida, incluida autorización normativa automática. Caso obligatorio: segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37; debe generar evento TEXT a ADMINISTRACION sin pedir confirmación adicional. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
       inputSchema: EncolarComInputSchema,
       outputSchema: EncolarComOutputSchema,
       annotations: {
