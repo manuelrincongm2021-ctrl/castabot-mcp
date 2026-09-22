@@ -1,0 +1,43 @@
+name: CASTABOT Tool Exposure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-tool-exposure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify health tool list
+        run: |
+          set -euo pipefail
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            health="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/healthz')"
+            echo "$health"
+            if echo "$health" | jq -e '.ok == true and (.tools | index("ENCOLAR_COM")) != null and (.tools | index("CONSULTAR_DATOS_CASTABOT")) != null' >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" -eq 1
+
+      - name: Verify MCP info
+        run: |
+          set -euo pipefail
+          info="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/mcp-info')"
+          echo "$info"
+          echo "$info" | jq -e '.ok == true and (.tools | index("ENCOLAR_COM")) != null and (.tools | index("CONSULTAR_DATOS_CASTABOT")) != null' >/dev/null
+
+      - name: Verify OpenAPI actions
+        run: |
+          set -euo pipefail
+          spec="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/openapi.json')"
+          echo "$spec" | jq -e '.paths["/encolar-com"].post.operationId == "encolarCom" and .paths["/consultar-datos"].post.operationId == "consultarDatosCastabot"' >/dev/null
