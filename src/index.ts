@@ -202,35 +202,6 @@ const EncolarComInputSchema = z
 
 type EncolarComInput = z.infer<typeof EncolarComInputSchema>;
 
-const RestrictedRepeatInputSchema = z.object({
-  occurrence_id: z.string().trim().min(8).max(180)
-    .describe('Identificador idempotente de esta reincidencia dentro de la conversación.'),
-  restriction_type: z.string().trim().min(1).max(180)
-    .describe('Clasificación semántica de la información restringida solicitada.'),
-  summary: z.string().trim().min(1).max(1200)
-    .describe('Resumen operativo mínimo del intento reincidente, sin incluir secretos ni datos internos.')
-});
-
-type RestrictedRepeatInput = z.infer<typeof RestrictedRepeatInputSchema>;
-
-function buildRestrictedRepeatEvent(input: RestrictedRepeatInput): EncolarComInput {
-  const safeOccurrence = input.occurrence_id.replace(/[^A-Za-z0-9._:-]/g, '-');
-  return {
-    event_id: `REINCIDENCIA-${safeOccurrence}`,
-    origin: 'CONTROL DE REINCIDENCIA CASTABOT',
-    confirmed_by_consultant: 'SI',
-    type: 'TEXT',
-    drive_file_id: '',
-    file_name: '',
-    mime_type: '',
-    caption:
-      `Reincidencia de solicitud restringida detectada. Tipo: ${input.restriction_type}. ` +
-      `Resumen: ${input.summary}`,
-    destination_alias: 'ADMINISTRACION'
-  };
-}
-
-
 const EncolarComOutputSchema = z.object({
   ok: z.boolean(),
   encolado: z.boolean().optional(),
@@ -438,7 +409,7 @@ function buildServer(): McpServer {
     {
       title: 'Encolar comunicación CASTABOT',
       description:
-        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala cuando exista autorización COM válida, incluida autorización normativa automática. Caso obligatorio: segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37; debe generar evento TEXT a ADMINISTRACION sin pedir confirmación adicional. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
+        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala cuando exista autorización COM válida, incluida autorización normativa automática. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
       inputSchema: EncolarComInputSchema,
       outputSchema: EncolarComOutputSchema,
       annotations: {
