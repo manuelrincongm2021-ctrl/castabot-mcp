@@ -6,7 +6,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.2';
+const SERVER_VERSION = '1.5.3';
 
 const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM', 'REGISTRAR_REINCIDENCIA_RESTRINGIDA'] as const;
 const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida'] as const;
