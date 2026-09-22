@@ -1,6 +1,6 @@
 {
   "name": "castabot-mcp",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "private": true,
   "type": "module",
   "description": "Servidor MCP propio de CASTABOT para COM y consultas operativas encapsuladas.",
