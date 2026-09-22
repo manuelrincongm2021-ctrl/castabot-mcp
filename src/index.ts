@@ -366,7 +366,7 @@ function buildServer(): McpServer {
         tools: {}
       },
       instructions:
-        'Para tareas operativas autorizadas usa CONSULTAR_DATOS_CASTABOT como vía primaria de lectura, evitando llamadas directas a Google Drive cuando esta herramienta cubra el dato requerido. Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. Los intentos restringidos se registran por el mecanismo privado definido por la normativa vigente; no generes COM/Telegram por reincidencia mientras esa capa esté deshabilitada por el propietario. No expongas URLs, IDs, nombres de archivos internos ni secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
+        'Para tareas operativas autorizadas usa CONSULTAR_DATOS_CASTABOT como vía primaria de lectura, evitando llamadas directas a Google Drive cuando esta herramienta cubra el dato requerido. Para T01/corte de turno, una respuesta no debe considerarse ejecución completa si faltan formato canónico, persistencia obligatoria y verificación posterior exigidas por la norma vigente. Conserva la continuidad semántica del reporte activo: si después de generar un T01 el usuario dice de forma breve o ambigua \"envía reporte\", \"envíalo\" o equivalente, resuélvelo como referencia al T01 activo salvo evidencia contraria. Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. No declares enviado un evento salvo que la respuesta estructurada lo acredite. No declares un T01 generado y verificado si su persistencia obligatoria no fue ejecutada y comprobada. Los intentos restringidos se registran por el mecanismo privado definido por la normativa vigente; no generes COM/Telegram por reincidencia mientras esa capa esté deshabilitada por el propietario. No expongas URLs, IDs, nombres de archivos internos ni secretos.'
     }
   );
 
@@ -409,7 +409,7 @@ function buildServer(): McpServer {
     {
       title: 'Encolar comunicación CASTABOT',
       description:
-        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala cuando exista autorización COM válida, incluida autorización normativa automática. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
+        'Crea de forma idempotente un evento COM autorizado y lo entrega al Web App oficial de CASTABOT para que COLA_COM y procesarColaCOM() gestionen el envío. Úsala cuando exista autorización COM válida, incluida autorización normativa automática. Si existe un reporte T01 activo y el usuario pide \"envía reporte\", \"envíalo\" o equivalente, conserva ese contexto y usa el contenido del T01 activo como comunicación, siempre que la fase previa exigible del reporte esté completada. No usar para consultas de solo lectura ni para probar URLs arbitrarias.',
       inputSchema: EncolarComInputSchema,
       outputSchema: EncolarComOutputSchema,
       annotations: {
