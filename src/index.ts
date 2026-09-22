@@ -6,9 +6,10 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.1';
+const SERVER_VERSION = '1.5.2';
 
 const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
+const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -200,6 +201,35 @@ const EncolarComInputSchema = z
   });
 
 type EncolarComInput = z.infer<typeof EncolarComInputSchema>;
+
+const RestrictedRepeatInputSchema = z.object({
+  occurrence_id: z.string().trim().min(8).max(180)
+    .describe('Identificador idempotente de esta reincidencia dentro de la conversación.'),
+  restriction_type: z.string().trim().min(1).max(180)
+    .describe('Clasificación semántica de la información restringida solicitada.'),
+  summary: z.string().trim().min(1).max(1200)
+    .describe('Resumen operativo mínimo del intento reincidente, sin incluir secretos ni datos internos.')
+});
+
+type RestrictedRepeatInput = z.infer<typeof RestrictedRepeatInputSchema>;
+
+function buildRestrictedRepeatEvent(input: RestrictedRepeatInput): EncolarComInput {
+  const safeOccurrence = input.occurrence_id.replace(/[^A-Za-z0-9._:-]/g, '-');
+  return {
+    event_id: `REINCIDENCIA-${safeOccurrence}`,
+    origin: 'CONTROL DE REINCIDENCIA CASTABOT',
+    confirmed_by_consultant: 'SI',
+    type: 'TEXT',
+    drive_file_id: '',
+    file_name: '',
+    mime_type: '',
+    caption:
+      `Reincidencia de solicitud restringida detectada. Tipo: ${input.restriction_type}. ` +
+      `Resumen: ${input.summary}`,
+    destination_alias: 'ADMINISTRACION'
+  };
+}
+
 
 const EncolarComOutputSchema = z.object({
   ok: z.boolean(),
@@ -472,6 +502,108 @@ if (MCP_ALLOWED_ORIGIN) {
 const app = createMcpExpressApp(appOptions);
 const nodeHandler = toNodeHandler(handler);
 
+
+app.get('/openapi.json', (req, res) => {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  const baseUrl = `${proto}://${host}`;
+
+  res.status(200).json({
+    openapi: '3.1.0',
+    info: {
+      title: 'CASTABOT Actions',
+      version: SERVER_VERSION,
+      description: 'Acciones controladas para lectura operativa y registro de reincidencia restringida.'
+    },
+    servers: [{ url: baseUrl }],
+    paths: {
+      '/consultar-datos': {
+        post: {
+          operationId: 'consultarDatosCastabot',
+          summary: 'Consultar datos operativos CASTABOT',
+          description: 'Consulta datos operativos autorizados sin exponer fuentes internas.',
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['dataset', 'range'],
+                  properties: {
+                    dataset: { type: 'string', enum: ['PENSION', 'BASCULA', 'REPORTES_BASCULA'] },
+                    range: { type: 'string', minLength: 1, maxLength: 300 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Consulta completada' },
+            '400': { description: 'Consulta inválida' },
+            '401': { description: 'No autorizado' },
+            '502': { description: 'Backend no disponible' }
+          }
+        }
+      },
+      '/restricted-repeat': {
+        post: {
+          operationId: 'registrarReincidenciaRestringida',
+          summary: 'Registrar reincidencia de solicitud restringida',
+          description: 'Registra el evento administrativo obligatorio cuando se detecta una segunda solicitud restringida del mismo tipo.',
+          'x-openai-isConsequential': true,
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['occurrence_id', 'restriction_type', 'summary'],
+                  properties: {
+                    occurrence_id: { type: 'string', minLength: 8, maxLength: 180 },
+                    restriction_type: { type: 'string', minLength: 1, maxLength: 180 },
+                    summary: { type: 'string', minLength: 1, maxLength: 1200 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Evento aceptado o duplicado idempotente' },
+            '400': { description: 'Entrada inválida' },
+            '401': { description: 'No autorizado' },
+            '502': { description: 'No se pudo registrar el evento' }
+          }
+        }
+      }
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer'
+        }
+      }
+    }
+  });
+});
+
+app.get('/privacy', (_req, res) => {
+  res
+    .status(200)
+    .type('text/html')
+    .send(
+      '<!doctype html><html><head><meta charset="utf-8"><title>CASTABOT Privacy</title></head>' +
+      '<body><h1>CASTABOT Privacy</h1>' +
+      '<p>CASTABOT procesa únicamente los datos necesarios para ejecutar consultas operativas autorizadas y registrar comunicaciones administrativas solicitadas por sus reglas de operación.</p>' +
+      '<p>No se deben enviar credenciales, secretos ni referencias internas innecesarias mediante las acciones públicas.</p>' +
+      '</body></html>'
+    );
+});
+
 app.get('/mcp-info', (_req, res) => {
   res.status(200).json({
     ok: true,
@@ -492,7 +624,9 @@ app.get('/healthz', (_req, res) => {
       version: SERVER_VERSION,
       http_api_configured: Boolean(CASTABOT_API_KEY),
       data_backend_configured: dataBackendConfigured(),
-      tools: MCP_TOOL_NAMES
+      tools: MCP_TOOL_NAMES,
+      action_operations: ACTION_OPERATION_IDS,
+      action_operations: ACTION_OPERATION_IDS
     });
   } catch (error) {
     res.status(503).json({
@@ -526,6 +660,58 @@ app.post('/procesar-com', async (req, res) => {
   try {
     const result = await postProcesarCom();
     res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+
+app.post('/restricted-repeat', async (req, res) => {
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({
+      ok: false,
+      error: 'NO_AUTORIZADO'
+    });
+    return;
+  }
+
+  const parsed = RestrictedRepeatInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'REINCIDENCIA_INVALIDA',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  try {
+    const event = buildRestrictedRepeatEvent(parsed.data);
+    const result = await postEncolarCom(event);
+    res.status(200).json({
+      ok: true,
+      accepted: true,
+      event_id: result.event_id || event.event_id,
+      status: result.status || result.estado || 'ACEPTADO',
+      duplicate: Boolean(result.duplicado)
+    });
   } catch (error) {
     res.status(502).json({
       ok: false,
