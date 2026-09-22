@@ -22,6 +22,20 @@ function dataBackendConfigured(): boolean {
   return Boolean(COM_FAST_PATH_URL && COM_FAST_PATH_SECRET);
 }
 
+const OperationalReadInputSchema = z.object({
+  dataset: z.enum(['PENSION', 'BASCULA', 'REPORTES_BASCULA'])
+    .describe('Conjunto lógico de datos operativo. No expone archivos, IDs ni URLs internos.'),
+  range: z.string().trim().min(1).max(300)
+    .describe('Rango lógico A1 requerido por una regla operativa interna; no debe mostrarse al consultante.')
+});
+
+const OperationalReadOutputSchema = z.object({
+  ok: z.boolean(),
+  dataset: z.string(),
+  rows: z.array(z.array(z.unknown())).optional(),
+  error: z.string().optional()
+});
+
 async function readOperationalDataset(
   dataset: 'PENSION' | 'BASCULA' | 'REPORTES_BASCULA',
   range: string
