@@ -6,10 +6,10 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.3';
+const SERVER_VERSION = '1.5.4';
 
 const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM', 'REGISTRAR_REINCIDENCIA_RESTRINGIDA'] as const;
-const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida'] as const;
+const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida', 'encolarCom'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -561,7 +561,7 @@ app.get('/openapi.json', (req, res) => {
     info: {
       title: 'CASTABOT Actions',
       version: SERVER_VERSION,
-      description: 'Acciones controladas para lectura operativa y registro de reincidencia restringida.'
+      description: 'Acciones controladas para lectura operativa, registro de reincidencia restringida y envío COM autorizado.'
     },
     servers: [{ url: baseUrl }],
     paths: {
@@ -592,6 +592,44 @@ app.get('/openapi.json', (req, res) => {
             '400': { description: 'Consulta inválida' },
             '401': { description: 'No autorizado' },
             '502': { description: 'Backend no disponible' }
+          }
+        }
+      },
+      '/encolar-com': {
+        post: {
+          operationId: 'encolarCom',
+          summary: 'Encolar comunicación CASTABOT',
+          description: 'Crea un evento COM autorizado para incidencias, reportes y otras comunicaciones permitidas. No declarar enviado hasta que la respuesta estructurada lo acredite.',
+          'x-openai-isConsequential': true,
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['event_id', 'origin', 'confirmed_by_consultant', 'type', 'caption'],
+                  properties: {
+                    event_id: { type: 'string', minLength: 1, maxLength: 180 },
+                    origin: { type: 'string', minLength: 1, maxLength: 180 },
+                    confirmed_by_consultant: { type: 'string', enum: ['SI'] },
+                    type: { type: 'string', enum: ['TEXT', 'PHOTO', 'DOCUMENT'] },
+                    drive_file_id: { type: 'string', maxLength: 300 },
+                    file_name: { type: 'string', maxLength: 500 },
+                    mime_type: { type: 'string', maxLength: 200 },
+                    caption: { type: 'string', maxLength: 12000 },
+                    destination_alias: { type: 'string', maxLength: 180, default: 'ADMINISTRACION' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Evento aceptado, enviado o duplicado idempotente' },
+            '400': { description: 'Evento inválido' },
+            '401': { description: 'No autorizado' },
+            '502': { description: 'No se pudo encolar o procesar el evento' }
           }
         }
       },
