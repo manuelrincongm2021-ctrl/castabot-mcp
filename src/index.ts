@@ -513,7 +513,7 @@ app.get('/openapi.json', (req, res) => {
     info: {
       title: 'CASTABOT Actions',
       version: SERVER_VERSION,
-      description: 'Acciones controladas para lectura operativa, registro de reincidencia restringida y envío COM autorizado.'
+      description: 'Acciones controladas para lectura operativa y envío COM autorizado.'
     },
     servers: [{ url: baseUrl }],
     paths: {
