@@ -625,7 +625,6 @@ app.get('/healthz', (_req, res) => {
       http_api_configured: Boolean(CASTABOT_API_KEY),
       data_backend_configured: dataBackendConfigured(),
       tools: MCP_TOOL_NAMES,
-      action_operations: ACTION_OPERATION_IDS,
       action_operations: ACTION_OPERATION_IDS
     });
   } catch (error) {
