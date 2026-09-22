@@ -23,7 +23,7 @@ jobs:
           for i in 1 2 3 4 5 6; do
             health="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/healthz')"
             echo "$health"
-            if echo "$health" | jq -e '.ok == true and .version == "1.5.0" and .data_backend_configured == true' >/dev/null; then
+            if echo "$health" | jq -e '.ok == true and .version == "1.5.5" and .data_backend_configured == true' >/dev/null; then
               ok=1
               break
             fi
