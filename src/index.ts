@@ -6,10 +6,10 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.4';
+const SERVER_VERSION = '1.5.5';
 
-const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM', 'REGISTRAR_REINCIDENCIA_RESTRINGIDA'] as const;
-const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'registrarReincidenciaRestringida', 'encolarCom'] as const;
+const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
+const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'encolarCom'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -395,7 +395,7 @@ function buildServer(): McpServer {
         tools: {}
       },
       instructions:
-        'Para tareas operativas autorizadas usa CONSULTAR_DATOS_CASTABOT como vía primaria de lectura, evitando llamadas directas a Google Drive cuando esta herramienta cubra el dato requerido. Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. Ante la segunda solicitud restringida del mismo tipo fuera del MODO DESARROLLO conforme a 54.35/54.37, crea el evento COM antes de finalizar la respuesta visible no disponible. No expongas URLs, IDs, nombres de archivos internos ni secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
+        'Para tareas operativas autorizadas usa CONSULTAR_DATOS_CASTABOT como vía primaria de lectura, evitando llamadas directas a Google Drive cuando esta herramienta cubra el dato requerido. Usa ENCOLAR_COM cuando una regla COM vigente requiera o autorice comunicar un resultado y la autorización aplicable ya exista. La autorización puede provenir de confirmación humana o directamente de una regla de envío automático. Los intentos restringidos se registran por el mecanismo privado definido por la normativa vigente; no generes COM/Telegram por reincidencia mientras esa capa esté deshabilitada por el propietario. No expongas URLs, IDs, nombres de archivos internos ni secretos y no declares enviado un evento salvo que la respuesta estructurada lo acredite.'
     }
   );
 
@@ -428,54 +428,6 @@ function buildServer(): McpServer {
           isError: true,
           structuredContent: result,
           content: [{ type: 'text', text: `Consulta operativa no completada: ${message}` }]
-        };
-      }
-    }
-  );
-
-  server.registerTool(
-    'REGISTRAR_REINCIDENCIA_RESTRINGIDA',
-    {
-      title: 'Registrar reincidencia restringida CASTABOT',
-      description:
-        'Operación semántica específica para el segundo intento de acceso al mismo tipo de información restringida fuera del MODO DESARROLLO. Construye internamente el evento COM idempotente dirigido a ADMINISTRACION y evita que el modelo conozca o fabrique campos técnicos de COM. La regla de reincidencia vigente constituye autorización suficiente.',
-      inputSchema: RestrictedRepeatInputSchema,
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: true,
-        openWorldHint: false
-      }
-    },
-    async (input) => {
-      try {
-        const event = buildRestrictedRepeatEvent(input);
-        const result = await postEncolarCom(event);
-        return {
-          structuredContent: {
-            ok: true,
-            accepted: true,
-            event_id: result.event_id || event.event_id,
-            status: result.status || result.estado || 'ACEPTADO',
-            duplicate: Boolean(result.duplicado)
-          },
-          content: [
-            {
-              type: 'text',
-              text: 'Reincidencia restringida registrada.'
-            }
-          ]
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: `No se pudo registrar la reincidencia restringida: ${message}`
-            }
-          ]
         };
       }
     }
@@ -633,38 +585,6 @@ app.get('/openapi.json', (req, res) => {
           }
         }
       },
-      '/restricted-repeat': {
-        post: {
-          operationId: 'registrarReincidenciaRestringida',
-          summary: 'Registrar reincidencia de solicitud restringida',
-          description: 'Registra el evento administrativo obligatorio cuando se detecta una segunda solicitud restringida del mismo tipo.',
-          'x-openai-isConsequential': true,
-          security: [{ bearerAuth: [] }],
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['occurrence_id', 'restriction_type', 'summary'],
-                  properties: {
-                    occurrence_id: { type: 'string', minLength: 8, maxLength: 180 },
-                    restriction_type: { type: 'string', minLength: 1, maxLength: 180 },
-                    summary: { type: 'string', minLength: 1, maxLength: 1200 }
-                  }
-                }
-              }
-            }
-          },
-          responses: {
-            '200': { description: 'Evento aceptado o duplicado idempotente' },
-            '400': { description: 'Entrada inválida' },
-            '401': { description: 'No autorizado' },
-            '502': { description: 'No se pudo registrar el evento' }
-          }
-        }
-      }
     },
     components: {
       securitySchemes: {
@@ -753,57 +673,6 @@ app.post('/procesar-com', async (req, res) => {
   }
 });
 
-
-app.post('/restricted-repeat', async (req, res) => {
-  try {
-    requireHttpApiConfig();
-  } catch (error) {
-    res.status(503).json({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-    return;
-  }
-
-  if (!isAuthorizedApiRequest(req)) {
-    res.status(401).json({
-      ok: false,
-      error: 'NO_AUTORIZADO'
-    });
-    return;
-  }
-
-  const parsed = RestrictedRepeatInputSchema.safeParse(req.body);
-
-  if (!parsed.success) {
-    res.status(400).json({
-      ok: false,
-      error: 'REINCIDENCIA_INVALIDA',
-      detalles: parsed.error.issues.map((issue) => ({
-        campo: issue.path.join('.'),
-        mensaje: issue.message
-      }))
-    });
-    return;
-  }
-
-  try {
-    const event = buildRestrictedRepeatEvent(parsed.data);
-    const result = await postEncolarCom(event);
-    res.status(200).json({
-      ok: true,
-      accepted: true,
-      event_id: result.event_id || event.event_id,
-      status: result.status || result.estado || 'ACEPTADO',
-      duplicate: Boolean(result.duplicado)
-    });
-  } catch (error) {
-    res.status(502).json({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-});
 
 app.post('/encolar-com', async (req, res) => {
   try {
