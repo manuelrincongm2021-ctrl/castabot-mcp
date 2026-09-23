@@ -57,3 +57,5 @@ jobs:
           )"
           echo "$response"
           echo "$response" | jq -e '.ok == true' >/dev/null
+
+# validation-pulse
