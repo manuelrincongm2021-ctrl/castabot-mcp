@@ -35,7 +35,7 @@ jobs:
           ok=0
           for i in 1 2 3 4 5 6; do
             health="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/healthz' || true)"
-            if echo "$health" | jq -e '.ok == true and .version == "1.5.13" and .data_backend_configured == true' >/dev/null 2>&1; then
+            if echo "$health" | jq -e '.ok == true and .version == "1.5.14" and .data_backend_configured == true' >/dev/null 2>&1; then
               ok=1
               break
             fi
