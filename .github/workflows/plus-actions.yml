@@ -23,7 +23,7 @@ jobs:
           ok=0
           for i in 1 2 3 4 5 6; do
             spec="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/openapi-plus.json' || true)"
-            if echo "$spec" | jq -e '.info.version == "1.5.9" and .paths["/encolar-com"].post.operationId == "encolarCom" and .paths["/consultar-datos"].post.operationId == "consultarDatosCastabot" and .paths["/encolar-com"].post["x-openai-isConsequential"] == true' >/dev/null 2>&1; then
+            if echo "$spec" | jq -e '.info.version == "1.5.12" and .paths["/encolar-com"].post.operationId == "encolarCom" and .paths["/consultar-datos"].post.operationId == "consultarDatosCastabot" and .paths["/encolar-com"].post["x-openai-isConsequential"] == true' >/dev/null 2>&1; then
               ok=1
               break
             fi
