@@ -1,0 +1,32 @@
+name: CASTABOT Plus Actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/index.ts'
+      - '.github/workflows/plus-actions.yml'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-plus-actions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify Plus Action schema
+        run: |
+          set -euo pipefail
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            spec="$(curl --fail-with-body --silent --show-error 'https://castabot-mcp.onrender.com/openapi-plus.json' || true)"
+            if echo "$spec" | jq -e '.info.version == "1.5.6" and .paths["/encolar-com"].post.operationId == "encolarCom" and .paths["/consultar-datos"].post.operationId == "consultarDatosCastabot" and .paths["/encolar-com"].post["x-openai-isConsequential"] == true' >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 10
+          done
+          test "$ok" -eq 1
