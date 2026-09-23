@@ -6,7 +6,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 const SERVER_NAME = 'castabot-com';
-const SERVER_VERSION = '1.5.5';
+const SERVER_VERSION = '1.5.6';
 
 const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
 const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'encolarCom'] as const;
@@ -563,6 +563,98 @@ app.get('/openapi.json', (req, res) => {
           type: 'http',
           scheme: 'bearer'
         }
+      }
+    }
+  });
+});
+
+
+app.get('/openapi-plus.json', (req, res) => {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  const baseUrl = `${proto}://${host}`;
+
+  res.status(200).json({
+    openapi: '3.1.0',
+    info: {
+      title: 'CASTABOT Plus Actions',
+      version: SERVER_VERSION,
+      description: 'Puente HTTPS para GPT Actions compatible con cuentas que no disponen del MCP CASTABOT en la sesión.'
+    },
+    servers: [{ url: baseUrl }],
+    paths: {
+      '/consultar-datos': {
+        post: {
+          operationId: 'consultarDatosCastabot',
+          summary: 'Consultar datos operativos CASTABOT',
+          description: 'Consulta datos operativos autorizados. Usar como vía primaria cuando esta Action esté disponible.',
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['dataset', 'range'],
+                  properties: {
+                    dataset: { type: 'string', enum: ['PENSION', 'BASCULA', 'REPORTES_BASCULA'] },
+                    range: { type: 'string', minLength: 1, maxLength: 300 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Consulta completada' },
+            '400': { description: 'Consulta inválida' },
+            '401': { description: 'No autorizado' },
+            '502': { description: 'Backend no disponible' }
+          }
+        }
+      },
+      '/encolar-com': {
+        post: {
+          operationId: 'encolarCom',
+          summary: 'Enviar comunicación CASTABOT por COM',
+          description: 'Encola una incidencia, reporte T01 u otra comunicación autorizada. Debe usarse cuando el usuario o la norma vigente autoricen el envío. No declarar enviado hasta recibir respuesta estructurada ok=true.',
+          'x-openai-isConsequential': true,
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['event_id', 'origin', 'confirmed_by_consultant', 'type', 'caption'],
+                  properties: {
+                    event_id: { type: 'string', minLength: 1, maxLength: 180 },
+                    origin: { type: 'string', minLength: 1, maxLength: 180 },
+                    confirmed_by_consultant: { type: 'string', enum: ['SI'] },
+                    type: { type: 'string', enum: ['TEXT', 'PHOTO', 'DOCUMENT'] },
+                    drive_file_id: { type: 'string', maxLength: 300 },
+                    file_name: { type: 'string', maxLength: 500 },
+                    mime_type: { type: 'string', maxLength: 200 },
+                    caption: { type: 'string', maxLength: 12000 },
+                    destination_alias: { type: 'string', maxLength: 180, default: 'ADMINISTRACION' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Evento aceptado o duplicado idempotente' },
+            '400': { description: 'Evento inválido' },
+            '401': { description: 'No autorizado' },
+            '502': { description: 'No se pudo encolar o procesar el evento' }
+          }
+        }
+      }
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer' }
       }
     }
   });
