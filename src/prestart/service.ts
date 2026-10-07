@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { fetchNormSnapshot } from './source.js';
 import { verifyT03NormText } from './rules.js';
 import { issuePrestartToken, type T03PrestartContext } from './token.js';
@@ -18,6 +19,14 @@ export async function runT03Prestart(args: {
     secret: args.backendSecret,
     fetchImpl: args.fetchImpl,
   });
+
+  const computedDigest = createHash('sha256')
+    .update(snapshot.text, 'utf8')
+    .digest('hex');
+
+  if (computedDigest !== snapshot.digest_sha256) {
+    throw new Error('PRESTART_NORM_DIGEST_MISMATCH');
+  }
 
   const ruleCheck = verifyT03NormText(snapshot.text);
   if (!ruleCheck.ok) {
