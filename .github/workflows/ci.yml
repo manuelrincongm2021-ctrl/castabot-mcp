@@ -27,7 +27,10 @@ jobs:
       - name: Apps Script syntax check
         run: |
           set -euo pipefail
-          find apps-script -name '*.gs' -print0 | xargs -0 -n1 node --check
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check < "$file"
+          done < <(find apps-script -name '*.gs' -print0)
 
       - name: Unit tests
         run: npm test
