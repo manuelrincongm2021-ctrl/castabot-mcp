@@ -10,6 +10,8 @@ import { fetchT03SearchWithFallback } from './t03/backend.js';
 import { executeT03FromSearch } from './t03/execute.js';
 import { deliverT03Com } from './t03/com.js';
 import { registerT03Result } from './t03/register.js';
+import { ASSISTANT_BRIDGE_VERSION, AssistantHandshakeInputSchema, supportedAssistantCapabilities } from './assistant/contracts.js';
+import { constantTimeSecretEquals, extractAssistantApiKey } from './assistant/security.js';
 
 const SERVER_NAME = 'castabot-com';
 const SERVER_VERSION = '1.5.14';
@@ -21,6 +23,8 @@ const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
 const COM_FAST_PATH_SECRET = String(process.env.COM_FAST_PATH_SECRET || '').trim();
 const CASTABOT_API_KEY = String(process.env.CASTABOT_API_KEY || '').trim();
+const ASSISTANT_BRIDGE_ENABLED = String(process.env.CASTABOT_ASSISTANT_BRIDGE_ENABLED || '').toLowerCase() === 'true';
+const ASSISTANT_API_KEY = String(process.env.CASTABOT_ASSISTANT_API_KEY || '').trim();
 const MCP_ALLOWED_HOST = String(process.env.MCP_ALLOWED_HOST || '').trim();
 const RENDER_EXTERNAL_HOSTNAME = String(process.env.RENDER_EXTERNAL_HOSTNAME || '').trim();
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
@@ -208,6 +212,20 @@ function isAuthorizedApiRequest(req: { headers: Record<string, unknown> }): bool
   }
 
   return extractApiKey(req) === CASTABOT_API_KEY;
+}
+
+function requireAssistantBridgeConfig(): void {
+  if (!ASSISTANT_BRIDGE_ENABLED) {
+    throw new Error('ASSISTANT_BRIDGE_DISABLED');
+  }
+  if (!ASSISTANT_API_KEY) {
+    throw new Error('CASTABOT_ASSISTANT_API_KEY_MISSING');
+  }
+}
+
+function isAuthorizedAssistantRequest(req: { headers: Record<string, unknown> }): boolean {
+  if (!ASSISTANT_API_KEY) return false;
+  return constantTimeSecretEquals(extractAssistantApiKey(req.headers), ASSISTANT_API_KEY);
 }
 
 
@@ -1086,6 +1104,9 @@ app.get('/healthz', (_req, res) => {
       server: SERVER_NAME,
       version: SERVER_VERSION,
       http_api_configured: Boolean(CASTABOT_API_KEY),
+      assistant_bridge_enabled: ASSISTANT_BRIDGE_ENABLED,
+      assistant_bridge_configured: Boolean(ASSISTANT_API_KEY),
+      assistant_bridge_version: ASSISTANT_BRIDGE_VERSION,
       data_backend_configured: dataBackendConfigured(),
       tools: MCP_TOOL_NAMES,
       action_operations: ACTION_OPERATION_IDS
@@ -1098,6 +1119,110 @@ app.get('/healthz', (_req, res) => {
   }
 });
 
+
+
+app.post('/assistant/v1/handshake', (req, res) => {
+  try {
+    requireAssistantBridgeConfig();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : String(error);
+    res.status(code === 'ASSISTANT_BRIDGE_DISABLED' ? 404 : 503).json({ ok: false, error: code });
+    return;
+  }
+
+  if (!isAuthorizedAssistantRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = AssistantHandshakeInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'HANDSHAKE_INVALIDO',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  const supported = supportedAssistantCapabilities(T03_DETERMINISTIC_ENABLED);
+  const requested = parsed.data.requested_capabilities;
+  const accepted = requested.length ? requested.filter((item) => supported.includes(item)) : supported;
+
+  res.status(200).json({
+    ok: true,
+    bridge: 'CASTABOT_BASCULAYPENSION',
+    bridge_version: ASSISTANT_BRIDGE_VERSION,
+    server: SERVER_NAME,
+    server_version: SERVER_VERSION,
+    app: parsed.data.app,
+    installation_id: parsed.data.installation_id,
+    mode: 'READ_ONLY',
+    accepted_capabilities: accepted,
+    t03_enabled: T03_DETERMINISTIC_ENABLED
+  });
+});
+
+app.post('/assistant/v1/t03/prearranque', async (req, res) => {
+  try {
+    requireAssistantBridgeConfig();
+    requireT03Feature();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : String(error);
+    res.status(code === 'ASSISTANT_BRIDGE_DISABLED' ? 404 : 503).json({ ok: false, error: code });
+    return;
+  }
+
+  if (!isAuthorizedAssistantRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = T03PrestartInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ ok: false, error: 'PREARRANQUE_INVALIDO' });
+    return;
+  }
+
+  try {
+    const result = await executePrestartT03(parsed.data);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/assistant/v1/t03/ejecutar', async (req, res) => {
+  try {
+    requireAssistantBridgeConfig();
+    requireT03Feature();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : String(error);
+    res.status(code === 'ASSISTANT_BRIDGE_DISABLED' ? 404 : 503).json({ ok: false, error: code });
+    return;
+  }
+
+  if (!isAuthorizedAssistantRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = T03ExecuteInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ ok: false, error: 'T03_INVALIDO' });
+    return;
+  }
+
+  try {
+    const result = await executeT03Protected(parsed.data);
+    res.status(result.ok ? 200 : 409).json(result);
+  } catch (error) {
+    res.status(502).json({ ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 
 app.post('/prearranque-t03', async (req, res) => {
