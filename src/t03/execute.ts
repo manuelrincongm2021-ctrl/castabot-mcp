@@ -65,16 +65,54 @@ export type ExecuteT03Success = {
   excluded_count: number;
 };
 
-function identityLine(records: ReturnType<typeof toT03History>, fallback: string): string {
-  const first = records[0];
-  if (!first) return fallback;
+function commonText(
+  values: Array<string | null | undefined>,
+): string | null {
+  const present = values
+    .map((value) => value?.trim() || '')
+    .filter(Boolean);
 
-  const parts: string[] = [];
-  if (first.matricula) parts.push(`MATRÍCULA: ${first.matricula}`);
-  if (first.numeroEconomico) {
-    parts.push(`NÚMERO ECONÓMICO: ${first.numeroEconomico}`);
+  if (!present.length) return null;
+
+  const normalized = new Map<string, string>();
+  for (const value of present) {
+    normalized.set(
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, ''),
+      value,
+    );
   }
-  if (first.cliente) parts.push(`CLIENTE: ${first.cliente}`);
+
+  return normalized.size === 1 ? present[0] : null;
+}
+
+function identityFromHistory(records: ReturnType<typeof toT03History>) {
+  return {
+    matricula: commonText(records.map((record) => record.matricula)),
+    numero_economico: commonText(
+      records.map((record) => record.numeroEconomico),
+    ),
+    cliente: commonText(records.map((record) => record.cliente)),
+  };
+}
+
+function identityLine(
+  identity: ReturnType<typeof identityFromHistory>,
+  fallback: string,
+): string {
+  const parts: string[] = [];
+  if (identity.matricula) {
+    parts.push(`MATRÍCULA: ${identity.matricula}`);
+  }
+  if (identity.numero_economico) {
+    parts.push(`NÚMERO ECONÓMICO: ${identity.numero_economico}`);
+  }
+  if (identity.cliente) {
+    parts.push(`CLIENTE: ${identity.cliente}`);
+  }
 
   return parts.length ? parts.join(' · ') : fallback;
 }
@@ -142,6 +180,8 @@ export function executeT03FromSearch(args: {
     taskContextDigest: verified.claims.taskContextDigest,
   });
 
+  const identity = identityFromHistory(result.validHistory);
+
   return {
     ok: true,
     consulta_id: ids.consultaId,
@@ -151,11 +191,7 @@ export function executeT03FromSearch(args: {
       identifier_type: args.identifierType,
       identifier_value: args.identifierValue,
     },
-    identity: {
-      matricula: history[0]?.matricula ?? null,
-      numero_economico: history[0]?.numeroEconomico ?? null,
-      cliente: history[0]?.cliente ?? null,
-    },
+    identity,
     analysis: {
       weight_type: args.weightType,
       current_weight_kg: args.currentWeightKg,
@@ -187,7 +223,7 @@ export function executeT03FromSearch(args: {
     },
     canonical_markdown: renderCanonicalT03({
       identifier: args.identifierValue,
-      identityLine: identityLine(history, args.identifierValue),
+      identityLine: identityLine(identity, args.identifierValue),
       result,
     }),
     valid_count: result.validHistory.length,
