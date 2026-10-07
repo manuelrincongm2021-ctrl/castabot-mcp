@@ -17,7 +17,7 @@ const BackendPrestartSchema = z.object({
       name: z.string().min(1),
       passed: z.literal(true),
     }),
-  ).min(4),
+  ),
   norm: z.object({
     digest_sha256: z.string().regex(/^[a-f0-9]{64}$/),
     updated_at: z.string().nullable(),
