@@ -167,3 +167,48 @@ test('acceptance 72AM9P: authorized fallback excludes open zero tara', () => {
   assert.equal(result.data.fallback_used, true);
   assert.ok(result.canonical_markdown.endsWith('**🟢 APROBADO PARA PESAR.**'));
 });
+
+
+test('outside-range result carries one escalated operational COM policy', () => {
+  const outsideContext = {
+    identifierType: 'NUMERO_ECONOMICO' as const,
+    identifierValue: 'C68 T68',
+    weightType: 'TARA' as const,
+    currentWeightKg: 19500,
+  };
+
+  const issued = issuePrestartToken({
+    secret: prestartSecret,
+    context: outsideContext,
+    normRevisionTag: 'outside-test-revision',
+    dataRouteClass: 'PRIMARY',
+    nowMs: 1_000_000,
+    ttlSeconds: 600,
+    jti: 'outside-jti',
+  });
+
+  const result = executeT03FromSearch({
+    prestartToken: issued.token,
+    prestartSecret,
+    idempotencySecret,
+    ...outsideContext,
+    rawSearchResponse: search,
+    nowMs: 1_100_000,
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error(result.code);
+
+  assert.equal(result.analysis.status, 'FUERA_DE_RANGO');
+  assert.equal(result.com_policy.operational_event_required, true);
+  assert.equal(result.com_policy.out_of_range_escalation_required, true);
+  assert.deepEqual(result.com_policy.authorization_basis, [
+    'T03_OPERATIONAL_AUTO',
+    'T03_OUT_OF_RANGE_AUTO',
+  ]);
+  assert.ok(
+    result.canonical_markdown.endsWith(
+      '**🔴 CONSULTAR CON ADMINISTRADOR ANTES DE PESAR.**',
+    ),
+  );
+});
