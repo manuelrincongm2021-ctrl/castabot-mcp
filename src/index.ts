@@ -10,7 +10,7 @@ import { fetchT03SearchWithFallback } from './t03/backend.js';
 import { executeT03FromSearch } from './t03/execute.js';
 import { deliverT03Com } from './t03/com.js';
 import { registerT03Result } from './t03/register.js';
-import { ASSISTANT_BRIDGE_VERSION, AssistantHandshakeInputSchema, supportedAssistantCapabilities } from './assistant/contracts.js';
+import { ASSISTANT_BRIDGE_VERSION, AssistantContextSchema, AssistantHandshakeInputSchema, supportedAssistantCapabilities } from './assistant/contracts.js';
 import { constantTimeSecretEquals, extractAssistantApiKey } from './assistant/security.js';
 
 const SERVER_NAME = 'castabot-com';
@@ -1163,6 +1163,41 @@ app.post('/assistant/v1/handshake', (req, res) => {
     mode: 'READ_ONLY',
     accepted_capabilities: accepted,
     t03_enabled: T03_DETERMINISTIC_ENABLED
+  });
+});
+
+app.post('/assistant/v1/context/validate', (req, res) => {
+  try {
+    requireAssistantBridgeConfig();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : String(error);
+    res.status(code === 'ASSISTANT_BRIDGE_DISABLED' ? 404 : 503).json({ ok: false, error: code });
+    return;
+  }
+
+  if (!isAuthorizedAssistantRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = AssistantContextSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'CONTEXTO_INVALIDO',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  res.status(200).json({
+    ok: true,
+    mode: 'READ_ONLY',
+    context: parsed.data,
+    persisted: false
   });
 });
 
