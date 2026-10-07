@@ -87,7 +87,10 @@ export async function registerT03Result(args: {
               ? 'CONSULTAR CON ADMINISTRADOR ANTES DE PESAR'
               : 'APROBADO PARA PESAR',
           observacion: observation(args.result),
-          fuente_resultado: 'REPORTES DE BASCULA 2026',
+          fuente_resultado:
+            args.result.data.source_class === 'AUTHORIZED_FALLBACK'
+              ? 'BASCULA Y PENSION 2026 / SOFTWARE BASCULA'
+              : 'REPORTES DE BASCULA 2026',
           consultante_responsable:
             args.consultanteResponsable?.trim() || '',
         },
