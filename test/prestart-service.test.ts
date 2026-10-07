@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runT03Prestart } from '../src/prestart/service.js';
@@ -11,6 +12,10 @@ const normText = [
   'ABS(VARIACIÓN %) > 1.50 %',
   'COM AUTOMÁTICO T03',
 ].join('\n');
+
+const normDigest = createHash('sha256')
+  .update(normText, 'utf8')
+  .digest('hex');
 
 const context = {
   identifierType: 'NUMERO_ECONOMICO' as const,
@@ -26,7 +31,7 @@ test('issues prestart token only after norm and data route checks', async () => 
         ok: true,
         source: 'CASTABOT_NORM',
         text: normText,
-        digest_sha256: 'b'.repeat(64),
+        digest_sha256: normDigest,
         updated_at: '2026-10-06T12:00:00.000Z',
         read_at: '2026-10-07T01:00:00.000Z',
       }),
@@ -61,7 +66,7 @@ test('issues prestart token only after norm and data route checks', async () => 
     nowMs: 1_100_000,
   });
 
-  assert.equal(verified.claims.normRevisionTag, 'b'.repeat(64));
+  assert.equal(verified.claims.normRevisionTag, normDigest);
 });
 
 test('does not issue token when data route is unavailable', async () => {
@@ -71,7 +76,7 @@ test('does not issue token when data route is unavailable', async () => {
         ok: true,
         source: 'CASTABOT_NORM',
         text: normText,
-        digest_sha256: 'b'.repeat(64),
+        digest_sha256: normDigest,
         updated_at: null,
         read_at: '2026-10-07T01:00:00.000Z',
       }),
