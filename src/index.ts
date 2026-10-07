@@ -6,7 +6,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { deriveFeatureSecret } from './security/derive.js';
 import { runT03Prestart } from './prestart/service.js';
-import { fetchT03Search } from './t03/backend.js';
+import { fetchT03SearchWithFallback } from './t03/backend.js';
 import { executeT03FromSearch } from './t03/execute.js';
 import { deliverT03Com } from './t03/com.js';
 import { registerT03Result } from './t03/register.js';
@@ -557,7 +557,7 @@ async function executeT03Protected(input: z.infer<typeof T03ExecuteInputSchema>)
   requireConfig();
   requireT03Feature();
 
-  const search = await fetchT03Search({
+  const search = await fetchT03SearchWithFallback({
     url: COM_FAST_PATH_URL,
     secret: COM_FAST_PATH_SECRET,
     input: {
