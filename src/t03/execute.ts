@@ -30,6 +30,11 @@ export type ExecuteT03Success = {
     identifier_type: 'MATRICULA' | 'NUMERO_ECONOMICO';
     identifier_value: string;
   };
+  identity: {
+    matricula: string | null;
+    numero_economico: string | null;
+    cliente: string | null;
+  };
   analysis: {
     weight_type: 'BRUTO' | 'TARA';
     current_weight_kg: number;
@@ -145,6 +150,11 @@ export function executeT03FromSearch(args: {
     unit: {
       identifier_type: args.identifierType,
       identifier_value: args.identifierValue,
+    },
+    identity: {
+      matricula: history[0]?.matricula ?? null,
+      numero_economico: history[0]?.numeroEconomico ?? null,
+      cliente: history[0]?.cliente ?? null,
     },
     analysis: {
       weight_type: args.weightType,
