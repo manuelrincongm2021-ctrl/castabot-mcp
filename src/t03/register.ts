@@ -9,7 +9,7 @@ const RegisterResponseSchema = z.object({
   consulta_id: z.string().min(1),
   fila: z.number().int().positive(),
   control_relectura: z.literal('SI'),
-  panel_actualizado: z.boolean(),
+  panel_actualizado: z.literal(true),
 });
 
 export type T03RegisterResponse = z.infer<typeof RegisterResponseSchema>;
