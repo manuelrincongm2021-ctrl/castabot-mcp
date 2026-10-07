@@ -67,6 +67,8 @@ test('computes deterministic T03 from verified live fixture', () => {
   if (!result.ok) throw new Error(result.code);
 
   assert.equal(result.valid_count, 9);
+  assert.equal(result.identity.matricula, null);
+  assert.equal(result.identity.numero_economico, 'C68 T68');
   assert.equal(result.analysis.historical_average_display_kg, 18989);
   assert.equal(result.analysis.variation_percent_display, '0.01');
   assert.equal(result.analysis.status, 'DENTRO_DE_RANGO');
@@ -165,6 +167,11 @@ test('acceptance 72AM9P: authorized fallback excludes open zero tara', () => {
   assert.equal(result.analysis.status, 'DENTRO_DE_RANGO');
   assert.equal(result.data.source_class, 'AUTHORIZED_FALLBACK');
   assert.equal(result.data.fallback_used, true);
+  assert.ok(
+    result.canonical_markdown.includes(
+      'Se excluyó 1 registro con peso 0 del promedio.',
+    ),
+  );
   assert.ok(result.canonical_markdown.endsWith('**🟢 APROBADO PARA PESAR.**'));
 });
 
