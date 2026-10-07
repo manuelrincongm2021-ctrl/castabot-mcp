@@ -51,7 +51,7 @@ test('issues prestart token only after norm and data route checks', async () => 
     fetchImpl,
     dataRouteProbe: async () => {
       routeChecked = true;
-      return true;
+      return 'PRIMARY';
     },
   });
 
@@ -91,8 +91,43 @@ test('does not issue token when data route is unavailable', async () => {
         tokenSecret: 'token-secret',
         context,
         fetchImpl,
-        dataRouteProbe: async () => false,
+        dataRouteProbe: async () => null,
       }),
     /PRESTART_DATA_ROUTE_UNAVAILABLE/,
   );
+});
+
+
+test('marks prestart degraded when authorized fallback route is selected', async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        source: 'CASTABOT_NORM',
+        text: normText,
+        digest_sha256: normDigest,
+        updated_at: null,
+        read_at: '2026-10-07T01:00:00.000Z',
+      }),
+      { status: 200 },
+    );
+
+  const result = await runT03Prestart({
+    backendUrl: 'https://example.test/exec',
+    backendSecret: 'backend-secret',
+    tokenSecret: 'token-secret',
+    context,
+    fetchImpl,
+    dataRouteProbe: async () => 'AUTHORIZED_FALLBACK',
+  });
+
+  assert.equal(result.data_status, 'DEGRADADO');
+
+  const verified = verifyPrestartToken({
+    token: result.prestart_token,
+    secret: 'token-secret',
+    expectedContext: context,
+  });
+
+  assert.equal(verified.claims.dataRouteClass, 'AUTHORIZED_FALLBACK');
 });
