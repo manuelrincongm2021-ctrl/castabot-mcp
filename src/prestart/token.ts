@@ -36,7 +36,15 @@ function b64url(input: Buffer): string {
 }
 
 function fromB64url(input: string): Buffer {
-  return Buffer.from(input, 'base64url');
+  const decoded = Buffer.from(input, 'base64url');
+
+  // Exigir codificación canónica evita representaciones textuales alternativas
+  // del mismo byte string y hace que cualquier alteración del token sea rechazo.
+  if (b64url(decoded) !== input) {
+    throw new Error('PRESTART_INVALID_ENCODING');
+  }
+
+  return decoded;
 }
 
 function deriveKey(secret: string): Buffer {
