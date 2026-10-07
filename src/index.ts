@@ -13,8 +13,8 @@ import { deliverT03Com } from './t03/com.js';
 const SERVER_NAME = 'castabot-com';
 const SERVER_VERSION = '1.5.14';
 
-const MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
-const ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'encolarCom'] as const;
+const BASE_MCP_TOOL_NAMES = ['CONSULTAR_DATOS_CASTABOT', 'ENCOLAR_COM'] as const;
+const BASE_ACTION_OPERATION_IDS = ['consultarDatosCastabot', 'encolarCom'] as const;
 
 const PORT = Number(process.env.PORT || 3000);
 const COM_FAST_PATH_URL = String(process.env.COM_FAST_PATH_URL || '').trim();
@@ -27,6 +27,14 @@ const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').tr
 const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
 const T03_DETERMINISTIC_ENABLED = String(process.env.CASTABOT_T03_DETERMINISTIC_ENABLED || '').toLowerCase() === 'true';
 const T03_PRESTART_TTL_SECONDS = Number(process.env.CASTABOT_PRESTART_TTL_SECONDS || 600);
+
+const MCP_TOOL_NAMES = T03_DETERMINISTIC_ENABLED
+  ? [...BASE_MCP_TOOL_NAMES, 'PREARRANQUE_CASTABOT', 'EJECUTAR_T03']
+  : [...BASE_MCP_TOOL_NAMES];
+
+const ACTION_OPERATION_IDS = T03_DETERMINISTIC_ENABLED
+  ? [...BASE_ACTION_OPERATION_IDS, 'prearranqueCastabotT03', 'ejecutarT03']
+  : [...BASE_ACTION_OPERATION_IDS];
 
 function dataBackendConfigured(): boolean {
   return Boolean(COM_FAST_PATH_URL && COM_FAST_PATH_SECRET);
@@ -903,6 +911,97 @@ app.get('/healthz', (_req, res) => {
   }
 });
 
+
+
+app.post('/prearranque-t03', async (req, res) => {
+  if (!T03_DETERMINISTIC_ENABLED) {
+    res.status(404).json({ ok: false, error: 'NO_DISPONIBLE' });
+    return;
+  }
+
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = T03PrestartInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'PREARRANQUE_INVALIDO',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  try {
+    const result = await executePrestartT03(parsed.data);
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+app.post('/ejecutar-t03', async (req, res) => {
+  if (!T03_DETERMINISTIC_ENABLED) {
+    res.status(404).json({ ok: false, error: 'NO_DISPONIBLE' });
+    return;
+  }
+
+  try {
+    requireHttpApiConfig();
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return;
+  }
+
+  if (!isAuthorizedApiRequest(req)) {
+    res.status(401).json({ ok: false, error: 'NO_AUTORIZADO' });
+    return;
+  }
+
+  const parsed = T03ExecuteInputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      ok: false,
+      error: 'T03_INVALIDO',
+      detalles: parsed.error.issues.map((issue) => ({
+        campo: issue.path.join('.'),
+        mensaje: issue.message
+      }))
+    });
+    return;
+  }
+
+  try {
+    const result = await executeT03Protected(parsed.data);
+    res.status(result.ok ? 200 : 409).json(result);
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
 
 
 app.post('/procesar-com', async (req, res) => {
