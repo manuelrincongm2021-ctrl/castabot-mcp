@@ -184,6 +184,32 @@ function rowVariation(value: number | null | undefined, average: number | null):
   return (((value - average) / average) * 100).toFixed(2) + ' %';
 }
 
+function exclusionObservation(
+  excluded: T03Success['excludedHistory'],
+): string {
+  if (!excluded.length) return '';
+
+  const counts = new Map<string, number>();
+  for (const item of excluded) {
+    counts.set(item.reason, (counts.get(item.reason) || 0) + 1);
+  }
+
+  const labels: Record<string, string> = {
+    ZERO_WEIGHT: 'con peso 0',
+    MISSING_OR_INVALID_WEIGHT: 'sin peso válido',
+    UNIT_MISMATCH: 'de otra unidad',
+    NOT_COMPARABLE: 'marcado no comparable',
+  };
+
+  const parts = [...counts.entries()].map(([reason, count]) => {
+    const noun = count === 1 ? 'registro' : 'registros';
+    const label = labels[reason] || 'no comparable';
+    return `${count} ${noun} ${label}`;
+  });
+
+  return ` Se excluyó ${parts.join(', ')} del promedio.`;
+}
+
 export function renderCanonicalT03(args: {
   identifier: string;
   identityLine?: string;
@@ -219,10 +245,13 @@ export function renderCanonicalT03(args: {
         ? 'por debajo'
         : 'igual';
 
-  const observation =
+  const baseObservation =
     args.result.differenceKg === 0
       ? 'El peso actual coincide con el promedio histórico.'
       : `El peso actual está ${formatKg(Math.abs(args.result.differenceKg))} kg ${direction} del promedio histórico, con una variación de ${args.result.variationPercentDisplay} %.`;
+
+  const observation =
+    baseObservation + exclusionObservation(args.result.excludedHistory);
 
   const semaphore =
     args.result.status === 'DENTRO_DE_RANGO'
