@@ -24,6 +24,11 @@ jobs:
       - name: TypeScript check
         run: npm run check
 
+      - name: Apps Script syntax check
+        run: |
+          set -euo pipefail
+          find apps-script -name '*.gs' -print0 | xargs -0 -n1 node --check
+
       - name: Unit tests
         run: npm test
 
