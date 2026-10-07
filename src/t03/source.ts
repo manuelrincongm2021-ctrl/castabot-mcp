@@ -22,12 +22,12 @@ const BackendRecordSchema = z.object({
 });
 
 const SearchMetadataSchema = z.object({
-  source_class: z.literal('PRIMARY'),
+  source_class: z.enum(['PRIMARY', 'AUTHORIZED_FALLBACK']),
   source_updated_at: z.string().nullable(),
   read_at: z.string().min(1),
-  fallback_used: z.literal(false),
-  fallback_reason: z.null(),
-  policy_version: z.literal('t03-source-v1'),
+  fallback_used: z.boolean(),
+  fallback_reason: z.string().nullable(),
+  policy_version: z.string().min(1),
   sheets_scanned: z.number().int().nonnegative(),
   sheets_skipped: z.array(
     z.object({
