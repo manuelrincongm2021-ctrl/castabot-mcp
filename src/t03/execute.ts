@@ -48,7 +48,7 @@ export type ExecuteT03Success = {
     decision: 'APROBADO_PARA_PESAR' | 'CONSULTAR_ADMINISTRADOR';
   };
   data: {
-    data_status: 'VIGENTE';
+    data_status: 'VIGENTE' | 'DEGRADADO';
     data_as_of: string | null;
     fallback_used: boolean;
     fallback_reason: string | null;
@@ -205,7 +205,10 @@ export function executeT03FromSearch(args: {
       decision: result.decision,
     },
     data: {
-      data_status: 'VIGENTE',
+      data_status:
+        search.metadata.source_class === 'PRIMARY'
+          ? 'VIGENTE'
+          : 'DEGRADADO',
       data_as_of: search.metadata.source_updated_at,
       fallback_used: search.metadata.fallback_used,
       fallback_reason: search.metadata.fallback_reason,
