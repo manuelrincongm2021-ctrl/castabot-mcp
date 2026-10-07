@@ -50,9 +50,9 @@ export type ExecuteT03Success = {
   data: {
     data_status: 'VIGENTE';
     data_as_of: string | null;
-    fallback_used: false;
-    fallback_reason: null;
-    source_class: 'PRIMARY';
+    fallback_used: boolean;
+    fallback_reason: string | null;
+    source_class: 'PRIMARY' | 'AUTHORIZED_FALLBACK';
     policy_version: string;
   };
   com_policy: {
@@ -171,9 +171,9 @@ export function executeT03FromSearch(args: {
     data: {
       data_status: 'VIGENTE',
       data_as_of: search.metadata.source_updated_at,
-      fallback_used: false,
-      fallback_reason: null,
-      source_class: 'PRIMARY',
+      fallback_used: search.metadata.fallback_used,
+      fallback_reason: search.metadata.fallback_reason,
+      source_class: search.metadata.source_class,
       policy_version: search.metadata.policy_version,
     },
     com_policy: {
