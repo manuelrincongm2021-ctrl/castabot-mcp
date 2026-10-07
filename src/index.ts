@@ -9,6 +9,7 @@ import { runT03Prestart } from './prestart/service.js';
 import { fetchT03Search } from './t03/backend.js';
 import { executeT03FromSearch } from './t03/execute.js';
 import { deliverT03Com } from './t03/com.js';
+import { registerT03Result } from './t03/register.js';
 
 const SERVER_NAME = 'castabot-com';
 const SERVER_VERSION = '1.5.14';
@@ -86,7 +87,8 @@ const T03PrestartInputSchema = z.object({
 
 const T03ExecuteInputSchema = z.object({
   prestart_token: z.string().trim().min(1),
-  ...T03ContextInputSchema.shape
+  ...T03ContextInputSchema.shape,
+  consultante_responsable: z.string().trim().max(180).optional()
 });
 
 async function readOperationalDataset(
@@ -476,13 +478,61 @@ async function executeT03Protected(input: z.infer<typeof T03ExecuteInputSchema>)
     processQueue: postProcesarCom
   });
 
+  let postregister:
+    | {
+        required: true;
+        completed: true;
+        duplicado: boolean;
+        control_relectura: 'SI';
+        panel_actualizado: true;
+      }
+    | {
+        required: true;
+        completed: false;
+        code: string;
+      };
+
+  if (!delivery.accredited) {
+    postregister = {
+      required: true,
+      completed: false,
+      code: 'COM_NOT_ACCREDITED'
+    };
+  } else {
+    try {
+      const registered = await registerT03Result({
+        url: COM_FAST_PATH_URL,
+        secret: COM_FAST_PATH_SECRET,
+        result: execution,
+        consultanteResponsable: input.consultante_responsable
+      });
+
+      postregister = {
+        required: true,
+        completed: true,
+        duplicado: registered.duplicado,
+        control_relectura: registered.control_relectura,
+        panel_actualizado: true
+      };
+    } catch {
+      postregister = {
+        required: true,
+        completed: false,
+        code: 'T03_POSTREGISTER_NOT_ACCREDITED'
+      };
+    }
+  }
+
   return {
     ...execution,
     com_delivery: {
       required: true,
       accredited: delivery.accredited,
       status: delivery.status
-    }
+    },
+    postregister,
+    operational_complete:
+      delivery.accredited && postregister.completed
   };
 }
 
