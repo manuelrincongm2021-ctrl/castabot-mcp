@@ -1,69 +1,39 @@
-# Web App — VERIFICAR_PREARRANQUE_T03 v1
+# WEBAPP_PREARRANQUE_T03 v1 — SUPERSEDIDO
 
-Estado: PARCHE PREPARADO, NO DESPLEGADO.
+Estado: **SUPERSEDIDO — NO IMPLEMENTAR**.
 
-## Problema resuelto
+La propuesta inicial colocaba la verificación del prearranque T03 dentro del Web App COM-S. Esa distribución fue descartada durante la implementación porque mezclaba transporte/cola con el hard gate de operación.
 
-Un token firmado por MCP no prueba prearranque si se emite basándose en una afirmación del LLM.
+## Arquitectura vigente
 
-La emisión debe depender de una verificación backend que **lea efectivamente** la fuente normativa vigente y resuelva la ruta de datos T03.
+Apps Script expone únicamente una fuente normativa de solo lectura:
 
-## Acción Web App
+`LEER_NORMA_CASTABOT`
 
-`VERIFICAR_PREARRANQUE_T03`
+Responsabilidad:
+- abrir efectivamente la fuente normativa configurada;
+- devolver el texto leído;
+- devolver SHA-256 y metadata de lectura.
 
-Entrada:
-- mode OPERATIVO;
-- task T03;
-- identifier_type;
-- identifier_value;
-- weight_type;
-- current_weight_kg.
+Apps Script **no**:
+- decide si el prearranque está acreditado;
+- emite tokens;
+- interpreta el umbral;
+- calcula T03;
+- autoriza COM.
 
-La acción:
-1. carga el documento normativo configurado mediante Script Property privada;
-2. lee el texto actual;
-3. verifica marcadores materiales T03/prearranque;
-4. calcula digest SHA-256 de la norma efectivamente leída;
-5. comprueba acceso al spreadsheet REPORTES_BASCULA;
-6. valida entradas;
-7. devuelve acreditación estructurada.
+El hard gate vigente vive en `castabot-mcp`:
+1. solicita `LEER_NORMA_CASTABOT`;
+2. recomputa SHA-256 del texto recibido;
+3. verifica reglas 66.C/T03 codificadas;
+4. resuelve disponibilidad PRIMARY/fallback autorizado;
+5. sólo entonces emite token opaco ligado al contexto T03.
 
-## Separación de responsabilidades
+Implementación vigente:
+- `apps-script/norm_source.gs`;
+- `src/prestart/source.ts`;
+- `src/prestart/rules.ts`;
+- `src/prestart/service.ts`;
+- `src/prestart/token.ts`.
 
-Web App:
-- acredita lectura normativa y ruta de datos.
-
-MCP:
-- valida la respuesta del Web App;
-- compara el contexto verificado contra el solicitado;
-- sólo entonces emite token opaco autenticado.
-
-LLM:
-- puede transportar el token;
-- no puede fabricarlo;
-- no puede elegir `prestart_verified=true`.
-
-## Configuración
-
-El ID de la fuente normativa no debe almacenarse en el repositorio público.
-
-Se configura en Apps Script mediante:
-`CASTABOT_NORM_DOCUMENT_ID`.
-
-## Código preparado
-
-- `apps-script/prestart_t03.gs`
-- `src/prestart/backend.ts`
-
-## Gate de despliegue
-
-No exponer `PREARRANQUE_CASTABOT` hasta:
-- incorporar parche al Apps Script real;
-- configurar Script Property;
-- integrar dispatch doPost;
-- redeplegar;
-- probar que una lectura normativa real produce digest;
-- probar que falta de norma o ruta de datos impide emitir token.
-
-ARCHIVO PREPARADO ≠ PREARRANQUE FUNCIONAL DESPLEGADO.
+No reintroducir `VERIFICAR_PREARRANQUE_T03` en COM-S.
