@@ -210,6 +210,121 @@ function isAuthorizedApiRequest(req: { headers: Record<string, unknown> }): bool
   return extractApiKey(req) === CASTABOT_API_KEY;
 }
 
+
+function t03OpenApiPaths(): Record<string, unknown> {
+  if (!T03_DETERMINISTIC_ENABLED) {
+    return {};
+  }
+
+  const contextProperties = {
+    identifier_type: {
+      type: 'string',
+      enum: ['MATRICULA', 'NUMERO_ECONOMICO']
+    },
+    identifier_value: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 180
+    },
+    weight_type: {
+      type: 'string',
+      enum: ['BRUTO', 'TARA']
+    },
+    current_weight_kg: {
+      type: 'number',
+      exclusiveMinimum: 0
+    }
+  };
+
+  return {
+    '/prearranque-t03': {
+      post: {
+        operationId: 'prearranqueCastabotT03',
+        summary: 'Acreditar prearranque T03',
+        description:
+          'Ejecuta el gate técnico previo a T03. No calcula el promedio ni produce COM.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'mode',
+                  'task',
+                  'identifier_type',
+                  'identifier_value',
+                  'weight_type',
+                  'current_weight_kg'
+                ],
+                properties: {
+                  mode: { type: 'string', enum: ['OPERATIVO'] },
+                  task: { type: 'string', enum: ['T03'] },
+                  ...contextProperties
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'Prearranque acreditado' },
+          '400': { description: 'Entrada inválida' },
+          '401': { description: 'No autorizado' },
+          '502': { description: 'Prearranque no acreditado' }
+        }
+      }
+    },
+    '/ejecutar-t03': {
+      post: {
+        operationId: 'ejecutarT03',
+        summary: 'Ejecutar T03 determinista',
+        description:
+          'Valida el token de prearranque, consulta históricos, calcula T03, produce COM idempotente y postregistra solo tras acreditar la entrega.',
+        'x-openai-isConsequential': true,
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'prestart_token',
+                  'identifier_type',
+                  'identifier_value',
+                  'weight_type',
+                  'current_weight_kg'
+                ],
+                properties: {
+                  prestart_token: {
+                    type: 'string',
+                    minLength: 1
+                  },
+                  ...contextProperties,
+                  consultante_responsable: {
+                    type: 'string',
+                    maxLength: 180
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': { description: 'T03 calculado; revisar acreditación COM/postregistro en respuesta estructurada' },
+          '400': { description: 'Entrada inválida' },
+          '401': { description: 'No autorizado' },
+          '409': { description: 'Gate o cálculo bloqueado' },
+          '502': { description: 'Backend T03 no disponible' }
+        }
+      }
+    }
+  };
+}
+
 const EncolarComInputSchema = z
   .object({
     event_id: z.string().trim().min(1).max(180)
@@ -745,6 +860,7 @@ app.get('/openapi.json', (req, res) => {
     },
     servers: [{ url: baseUrl }],
     paths: {
+      ...t03OpenApiPaths(),
       '/consultar-datos': {
         post: {
           operationId: 'consultarDatosCastabot',
@@ -840,6 +956,7 @@ app.get('/openapi-plus.json', (req, res) => {
     },
     servers: [{ url: baseUrl }],
     paths: {
+      ...t03OpenApiPaths(),
       '/consultar-datos': {
         post: {
           operationId: 'consultarDatosCastabot',
