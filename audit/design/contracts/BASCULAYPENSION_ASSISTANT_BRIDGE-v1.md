@@ -110,3 +110,13 @@ El contexto debe contener sólo los datos necesarios para la consulta. No enviar
 8. Activar flag true.
 9. Verificar handshake.
 10. Ejecutar T03 E2E controlado.
+
+
+## Códigos canónicos de contrato
+
+Para evitar acoplar el protocolo a etiquetas visuales, el wire contract usa códigos estables:
+
+- roles: `ADMINISTRADOR`, `SUPERVISION`, `ENCARGADO_DE_TURNO`;
+- turnos: `MANANA`, `TARDE`, `NOCHE`.
+
+BASCULAYPENSION puede conservar en UI `ENCARGADO DE TURNO` y `MAÑANA`; el cliente debe normalizarlos antes de enviarlos. El servidor rechaza las etiquetas visuales en bruto para mantener un contrato inequívoco.
