@@ -57,6 +57,10 @@ Respuesta esperada:
 
 El servidor no persiste el handshake ni lo trata como operación.
 
+### POST /assistant/v1/context/validate
+
+Valida el contexto enviado por BASCULAYPENSION y devuelve el contexto normalizado con `persisted=false`. Sirve para probar integración contextual sin modelo conversacional y sin escritura.
+
 ### POST /assistant/v1/t03/prearranque
 
 Reutiliza exactamente el motor determinista T03 existente. No crea una segunda implementación de prearranque ni cálculo.
