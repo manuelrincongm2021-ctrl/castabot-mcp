@@ -147,6 +147,20 @@ function registrarT03Castabot_(payload) {
         .getRange(existente, 1, 1, 23)
         .getDisplayValues()[0];
 
+      const controlRelecturaExistente =
+        textoT03Registro_(row[21]).toUpperCase();
+
+      if (controlRelecturaExistente !== 'SI') {
+        throw new Error('T03_REGISTER_DUPLICATE_NOT_VERIFIED');
+      }
+
+      const panelActual = metricasPanelT03_(ss);
+      const consultasPanel = Number(panelActual['T03 consultas']);
+
+      if (!Number.isFinite(consultasPanel) || consultasPanel < 1) {
+        throw new Error('T03_REGISTER_PANEL_NOT_VERIFIED');
+      }
+
       return {
         ok: true,
         registrado: false,
@@ -154,7 +168,7 @@ function registrarT03Castabot_(payload) {
         registro_id: textoT03Registro_(row[0]),
         consulta_id: textoT03Registro_(row[1]),
         fila: existente,
-        control_relectura: textoT03Registro_(row[21]) || 'SI',
+        control_relectura: 'SI',
         panel_actualizado: true
       };
     }
