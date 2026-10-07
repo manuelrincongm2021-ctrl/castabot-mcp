@@ -522,16 +522,36 @@ async function postProcesarCom(): Promise<Record<string, unknown>> {
   }
 }
 
-async function probeT03DataRoute(): Promise<boolean> {
+async function probeT03DataRoute(): Promise<
+  'PRIMARY' | 'AUTHORIZED_FALLBACK' | null
+> {
   try {
-    const result = await readOperationalDataset(
+    const primary = await readOperationalDataset(
       'REPORTES_BASCULA',
       'PROGRAMA!A1:P1'
     );
-    return result.ok === true;
+
+    if (primary.ok === true) {
+      return 'PRIMARY';
+    }
   } catch {
-    return false;
+    // Intentar fallback autorizado antes de declarar indisponibilidad.
   }
+
+  try {
+    const fallback = await readOperationalDataset(
+      'BASCULA',
+      'SOFTWARE BASCULA!A1:P1'
+    );
+
+    if (fallback.ok === true) {
+      return 'AUTHORIZED_FALLBACK';
+    }
+  } catch {
+    // Fail closed abajo.
+  }
+
+  return null;
 }
 
 async function executePrestartT03(input: z.infer<typeof T03PrestartInputSchema>) {
