@@ -28,7 +28,7 @@ export const AssistantContextSchema = z.object({
     'OTHER'
   ]),
   screen: z.string().trim().max(120).optional(),
-  user_role: z.enum(['ADMINISTRADOR', 'SUPERVISION', 'ENCARGADO']).optional(),
+  user_role: z.enum(['ADMINISTRADOR', 'SUPERVISION', 'ENCARGADO_DE_TURNO']).optional(),
   shift: z.enum(['MANANA', 'TARDE', 'NOCHE']).optional(),
   tractor_plate: z.string().trim().max(40).optional(),
   economic_number: z.string().trim().max(80).optional(),
