@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, reengineering-v1-contracts-2026-10-06]
 
 jobs:
   verify:
@@ -23,6 +23,17 @@ jobs:
 
       - name: TypeScript check
         run: npm run check
+
+      - name: Apps Script syntax check
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check < "$file"
+          done < <(find apps-script -name '*.gs' -print0)
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build
