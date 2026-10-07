@@ -8,7 +8,7 @@ export async function runT03Prestart(args: {
   backendSecret: string;
   tokenSecret: string;
   context: T03PrestartContext;
-  dataRouteProbe: () => Promise<boolean>;
+  dataRouteProbe: () => Promise<'PRIMARY' | 'AUTHORIZED_FALLBACK' | null>;
   ttlSeconds?: number;
   nowMs?: number;
   jti?: string;
@@ -35,8 +35,8 @@ export async function runT03Prestart(args: {
     );
   }
 
-  const routeOk = await args.dataRouteProbe();
-  if (!routeOk) {
+  const dataRouteClass = await args.dataRouteProbe();
+  if (!dataRouteClass) {
     throw new Error('PRESTART_DATA_ROUTE_UNAVAILABLE');
   }
 
@@ -44,7 +44,7 @@ export async function runT03Prestart(args: {
     secret: args.tokenSecret,
     context: args.context,
     normRevisionTag: snapshot.digest_sha256,
-    dataRouteClass: 'PRIMARY',
+    dataRouteClass,
     ttlSeconds: args.ttlSeconds,
     nowMs: args.nowMs,
     jti: args.jti,
@@ -64,7 +64,7 @@ export async function runT03Prestart(args: {
       { name: 'DATA_ROUTE_RESOLVED', passed: true as const },
       { name: 'INPUT_COMPLETE', passed: true as const },
     ],
-    data_status: 'VIGENTE' as const,
+    data_status: dataRouteClass === 'PRIMARY' ? 'VIGENTE' as const : 'DEGRADADO' as const,
     contract_version: 'prestart-v1' as const,
   };
 }
