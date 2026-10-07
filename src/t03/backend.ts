@@ -5,10 +5,12 @@ export type T03BackendSearchInput = {
   identifierValue: string;
 };
 
-export async function fetchT03Search(args: {
+async function postSearchAction(args: {
   url: string;
   secret: string;
+  action: 'BUSCAR_T03_CASTABOT' | 'BUSCAR_T03_FALLBACK_CASTABOT';
   input: T03BackendSearchInput;
+  fallbackReason?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<T03SearchResponse> {
@@ -39,9 +41,10 @@ export async function fetchT03Search(args: {
       },
       body: JSON.stringify({
         secret,
-        accion: 'BUSCAR_T03_CASTABOT',
+        accion: args.action,
         identifier_type: args.input.identifierType,
         identifier_value: identifierValue,
+        fallback_reason: args.fallbackReason || null,
       }),
       redirect: 'follow',
       signal: controller.signal,
@@ -82,5 +85,78 @@ export async function fetchT03Search(args: {
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function fetchT03Search(args: {
+  url: string;
+  secret: string;
+  input: T03BackendSearchInput;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<T03SearchResponse> {
+  const result = await postSearchAction({
+    ...args,
+    action: 'BUSCAR_T03_CASTABOT',
+  });
+
+  if (
+    result.metadata.source_class !== 'PRIMARY' ||
+    result.metadata.fallback_used
+  ) {
+    throw new Error('T03_PRIMARY_SOURCE_METADATA_INVALID');
+  }
+
+  return result;
+}
+
+export async function fetchT03SearchWithFallback(args: {
+  url: string;
+  secret: string;
+  input: T03BackendSearchInput;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<T03SearchResponse> {
+  let primary: T03SearchResponse | null = null;
+
+  try {
+    primary = await fetchT03Search(args);
+
+    if (primary.records.length > 0) {
+      return primary;
+    }
+  } catch {
+    primary = null;
+  }
+
+  const fallbackReason = primary
+    ? 'PRIMARY_NO_HISTORY'
+    : 'PRIMARY_UNAVAILABLE';
+
+  try {
+    const fallback = await postSearchAction({
+      ...args,
+      action: 'BUSCAR_T03_FALLBACK_CASTABOT',
+      fallbackReason,
+    });
+
+    if (
+      fallback.metadata.source_class !== 'AUTHORIZED_FALLBACK' ||
+      !fallback.metadata.fallback_used
+    ) {
+      throw new Error('T03_FALLBACK_SOURCE_METADATA_INVALID');
+    }
+
+    if (fallback.records.length > 0 || primary === null) {
+      return fallback;
+    }
+
+    return primary;
+  } catch {
+    if (primary) {
+      return primary;
+    }
+
+    throw new Error('T03_DATA_UNAVAILABLE');
   }
 }
