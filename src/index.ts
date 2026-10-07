@@ -4,6 +4,11 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import { deriveFeatureSecret } from './security/derive.js';
+import { runT03Prestart } from './prestart/service.js';
+import { fetchT03Search } from './t03/backend.js';
+import { executeT03FromSearch } from './t03/execute.js';
+import { deliverT03Com } from './t03/com.js';
 
 const SERVER_NAME = 'castabot-com';
 const SERVER_VERSION = '1.5.14';
@@ -20,9 +25,28 @@ const RENDER_EXTERNAL_HOSTNAME = String(process.env.RENDER_EXTERNAL_HOSTNAME || 
 const MCP_ALLOWED_ORIGIN = String(process.env.MCP_ALLOWED_ORIGIN || '').trim();
 const OPENAI_APPS_CHALLENGE = String(process.env.OPENAI_APPS_CHALLENGE || '').trim();
 const IS_RENDER = String(process.env.RENDER || '').toLowerCase() === 'true';
+const T03_DETERMINISTIC_ENABLED = String(process.env.CASTABOT_T03_DETERMINISTIC_ENABLED || '').toLowerCase() === 'true';
+const T03_PRESTART_TTL_SECONDS = Number(process.env.CASTABOT_PRESTART_TTL_SECONDS || 600);
 
 function dataBackendConfigured(): boolean {
   return Boolean(COM_FAST_PATH_URL && COM_FAST_PATH_SECRET);
+}
+
+function requireT03Feature(): void {
+  if (!T03_DETERMINISTIC_ENABLED) {
+    throw new Error('T03_DETERMINISTIC_DISABLED');
+  }
+  if (!Number.isFinite(T03_PRESTART_TTL_SECONDS) || T03_PRESTART_TTL_SECONDS <= 0) {
+    throw new Error('CASTABOT_PRESTART_TTL_SECONDS_INVALID');
+  }
+}
+
+function t03PrestartSecret(): string {
+  return deriveFeatureSecret(COM_FAST_PATH_SECRET, 'T03_PRESTART_V1');
+}
+
+function t03IdempotencySecret(): string {
+  return deriveFeatureSecret(COM_FAST_PATH_SECRET, 'T03_IDEMPOTENCY_V1');
 }
 
 const OperationalReadInputSchema = z.object({
@@ -37,6 +61,24 @@ const OperationalReadOutputSchema = z.object({
   dataset: z.string(),
   rows: z.array(z.array(z.unknown())).optional(),
   error: z.string().optional()
+});
+
+const T03ContextInputSchema = z.object({
+  identifier_type: z.enum(['MATRICULA', 'NUMERO_ECONOMICO']),
+  identifier_value: z.string().trim().min(1).max(180),
+  weight_type: z.enum(['BRUTO', 'TARA']),
+  current_weight_kg: z.number().finite().positive()
+});
+
+const T03PrestartInputSchema = z.object({
+  mode: z.literal('OPERATIVO'),
+  task: z.literal('T03'),
+  ...T03ContextInputSchema.shape
+});
+
+const T03ExecuteInputSchema = z.object({
+  prestart_token: z.string().trim().min(1),
+  ...T03ContextInputSchema.shape
 });
 
 async function readOperationalDataset(
@@ -355,6 +397,87 @@ async function postProcesarCom(): Promise<Record<string, unknown>> {
   }
 }
 
+async function probeT03DataRoute(): Promise<boolean> {
+  try {
+    const result = await readOperationalDataset(
+      'REPORTES_BASCULA',
+      'PROGRAMA!A1:P1'
+    );
+    return result.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function executePrestartT03(input: z.infer<typeof T03PrestartInputSchema>) {
+  requireConfig();
+  requireT03Feature();
+
+  return runT03Prestart({
+    backendUrl: COM_FAST_PATH_URL,
+    backendSecret: COM_FAST_PATH_SECRET,
+    tokenSecret: t03PrestartSecret(),
+    context: {
+      identifierType: input.identifier_type,
+      identifierValue: input.identifier_value,
+      weightType: input.weight_type,
+      currentWeightKg: input.current_weight_kg
+    },
+    dataRouteProbe: probeT03DataRoute,
+    ttlSeconds: T03_PRESTART_TTL_SECONDS
+  });
+}
+
+async function executeT03Protected(input: z.infer<typeof T03ExecuteInputSchema>) {
+  requireConfig();
+  requireT03Feature();
+
+  const search = await fetchT03Search({
+    url: COM_FAST_PATH_URL,
+    secret: COM_FAST_PATH_SECRET,
+    input: {
+      identifierType: input.identifier_type,
+      identifierValue: input.identifier_value
+    }
+  });
+
+  const execution = executeT03FromSearch({
+    prestartToken: input.prestart_token,
+    prestartSecret: t03PrestartSecret(),
+    idempotencySecret: t03IdempotencySecret(),
+    identifierType: input.identifier_type,
+    identifierValue: input.identifier_value,
+    weightType: input.weight_type,
+    currentWeightKg: input.current_weight_kg,
+    rawSearchResponse: search
+  });
+
+  if (!execution.ok) {
+    return execution;
+  }
+
+  const delivery = await deliverT03Com({
+    result: execution,
+    producer: async (event) =>
+      postEncolarCom({
+        ...event,
+        drive_file_id: '',
+        file_name: '',
+        mime_type: ''
+      }),
+    processQueue: postProcesarCom
+  });
+
+  return {
+    ...execution,
+    com_delivery: {
+      required: true,
+      accredited: delivery.accredited,
+      status: delivery.status
+    }
+  };
+}
+
 function buildServer(): McpServer {
   const server = new McpServer(
     {
@@ -452,6 +575,82 @@ function buildServer(): McpServer {
       }
     }
   );
+
+
+  if (T03_DETERMINISTIC_ENABLED) {
+    server.registerTool(
+      'PREARRANQUE_CASTABOT',
+      {
+        title: 'Prearranque CASTABOT T03',
+        description:
+          'Acredita por backend el prearranque obligatorio de T03 y emite un token opaco ligado exactamente a la consulta. No calcula promedios ni produce COM.',
+        inputSchema: T03PrestartInputSchema,
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
+        }
+      },
+      async (input) => {
+        try {
+          const result = await executePrestartT03(input);
+          return {
+            structuredContent: result,
+            content: [{ type: 'text', text: 'Prearranque T03 acreditado.' }]
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return {
+            isError: true,
+            structuredContent: { ok: false, code: message },
+            content: [{ type: 'text', text: 'TAREA DETENIDA — PREARRANQUE NO ACREDITADO.' }]
+          };
+        }
+      }
+    );
+
+    server.registerTool(
+      'EJECUTAR_T03',
+      {
+        title: 'Ejecutar T03 determinista',
+        description:
+          'Ejecuta T03 únicamente con prestart_token válido: consulta la fuente primaria, calcula con precisión interna, renderiza el formato canónico y produce el evento COM idempotente.',
+        inputSchema: T03ExecuteInputSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false
+        }
+      },
+      async (input) => {
+        try {
+          const result = await executeT03Protected(input);
+
+          if (!result.ok) {
+            return {
+              isError: true,
+              structuredContent: result,
+              content: [{ type: 'text', text: result.code }]
+            };
+          }
+
+          return {
+            structuredContent: result,
+            content: [{ type: 'text', text: result.canonical_markdown }]
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return {
+            isError: true,
+            structuredContent: { ok: false, code: message },
+            content: [{ type: 'text', text: 'T03 no pudo completarse.' }]
+          };
+        }
+      }
+    );
+  }
 
   return server;
 }
