@@ -35,8 +35,8 @@ test('assistant context accepts bounded operational context without secrets', ()
   const parsed = AssistantContextSchema.safeParse({
     module: 'PENSION_ENTRY',
     screen: 'NEW_ENTRY',
-    user_role: 'SUPERVISION',
-    shift: 'TARDE',
+    user_role: 'ENCARGADO_DE_TURNO',
+    shift: 'MANANA',
     tractor_plate: '63BC3E',
     company: 'TRANSFAM'
   });
@@ -65,4 +65,14 @@ test('assistant auth supports bearer and dedicated header with constant-time com
   );
   assert.equal(constantTimeSecretEquals('same', 'same'), true);
   assert.equal(constantTimeSecretEquals('same', 'different'), false);
+});
+
+
+test('assistant context rejects legacy/display role labels on the wire', () => {
+  const parsed = AssistantContextSchema.safeParse({
+    module: 'PENSION_ENTRY',
+    user_role: 'ENCARGADO DE TURNO',
+    shift: 'MAÑANA'
+  });
+  assert.equal(parsed.success, false);
 });
