@@ -10,6 +10,7 @@ export async function fetchT03Search(args: {
   secret: string;
   input: T03BackendSearchInput;
   timeoutMs?: number;
+  fetchImpl?: typeof fetch;
 }): Promise<T03SearchResponse> {
   const url = args.url.trim();
   const secret = args.secret.trim();
@@ -30,7 +31,7 @@ export async function fetchT03Search(args: {
   );
 
   try {
-    const response = await fetch(url, {
+    const response = await (args.fetchImpl ?? fetch)(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
