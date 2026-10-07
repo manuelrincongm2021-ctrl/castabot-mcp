@@ -12,6 +12,11 @@ const result: ExecuteT03Success = {
     identifier_type: 'NUMERO_ECONOMICO',
     identifier_value: 'C68 T68',
   },
+  identity: {
+    matricula: 'C580BJW',
+    numero_economico: 'C68 T68',
+    cliente: 'DAMIGAS',
+  },
   analysis: {
     weight_type: 'TARA',
     current_weight_kg: 18990,
