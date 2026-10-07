@@ -217,7 +217,7 @@ function registrarT03Castabot_(payload) {
       textoT03Registro_(registro.fuente_resultado),
       'SI',
       '',
-      fuera ? 'PENDIENTE' : 'NO APLICA',
+      fuera ? 'PENDIENTE DE RESOLUCIÓN' : 'NO APLICA',
       '',
       '',
       textoT03Registro_(registro.consultante_responsable)
